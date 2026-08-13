@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Biz.Bizadm.KMS/Biz.Bizadm.KMS.csproj" />
+  <Project Path="Biz.Bizadm.KMSTest/Biz.Bizadm.KMSTest.csproj" Id="53d64c63-d7d8-44eb-9e12-48348e589e64" />
+</Solution>
