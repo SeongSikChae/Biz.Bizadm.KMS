@@ -96,5 +96,17 @@ namespace Biz.Bizadm.KMS.Cipher
         private AesGcmDekCipher(byte[] key) : base(key)
         {
         }
+
+        /// <inheritdoc />
+        public override Task<byte[]> EncryptAsync(byte[] plain, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Encrypt(plain));
+        }
+
+        /// <inheritdoc />
+        public override Task<byte[]> DecryptAsync(byte[] encrypted, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Decrypt(encrypted));
+        }
     }
 }

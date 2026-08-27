@@ -47,6 +47,12 @@ namespace Biz.Bizadm.KMS.Protect.Cipher
         }
 
         /// <inheritdoc />
+        public Task<byte[]> GetPasswordAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(GetPassword());
+        }
+
+        /// <inheritdoc />
         public void StorePassword(ReadOnlySpan<byte> password)
         {
             if (password.IsEmpty)

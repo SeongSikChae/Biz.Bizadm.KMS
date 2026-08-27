@@ -10,5 +10,12 @@
         /// </summary>
         /// <returns>패스워드 바이트. 호출부가 사용 후 안전하게 지워야 한다.</returns>
         byte[] GetPassword();
+
+        /// <summary>
+        /// KEK에 사용할 패스워드 바이트를 비동기로 반환한다.
+        /// </summary>
+        /// <param name="cancellationToken">취소 토큰.</param>
+        /// <returns>패스워드 바이트. 호출부가 사용 후 안전하게 지워야 한다.</returns>
+        Task<byte[]> GetPasswordAsync(CancellationToken cancellationToken = default);
     }
 }

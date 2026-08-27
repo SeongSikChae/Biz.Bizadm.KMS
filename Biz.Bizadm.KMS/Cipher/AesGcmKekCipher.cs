@@ -30,5 +30,17 @@ namespace Biz.Bizadm.KMS.Cipher
         private AesGcmKekCipher(byte[] password, byte[] salt, int iterationCount) : base(Rfc2898DeriveBytes.Pbkdf2(password, salt, iterationCount, HashAlgorithmName.SHA256, 32))
         {
         }
+
+        /// <inheritdoc />
+        public override Task<byte[]> EncryptAsync(byte[] plain, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Encrypt(plain));
+        }
+
+        /// <inheritdoc />
+        public override Task<byte[]> DecryptAsync(byte[] encrypted, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Decrypt(encrypted));
+        }
     }
 }

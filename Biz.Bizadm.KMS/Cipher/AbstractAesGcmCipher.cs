@@ -72,6 +72,9 @@ namespace Biz.Bizadm.KMS.Cipher
         }
 
         /// <inheritdoc />
+        public abstract Task<byte[]> EncryptAsync(byte[] plain, CancellationToken cancellationToken = default);
+
+        /// <inheritdoc />
         public byte[] Decrypt(byte[] encrypted)
         {
             ObjectDisposedException.ThrowIf(disposedValue, this);
@@ -101,6 +104,9 @@ namespace Biz.Bizadm.KMS.Cipher
                 aesGcmPool.Return(aesGcm);
             }
         }
+
+        /// <inheritdoc />
+        public abstract Task<byte[]> DecryptAsync(byte[] encrypted, CancellationToken cancellationToken = default);
 
         /// <inheritdoc />
         public void Dispose()

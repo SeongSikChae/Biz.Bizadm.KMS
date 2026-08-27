@@ -44,6 +44,18 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
         }
 
         /// <inheritdoc />
+        public Task<byte[]> EncryptAsync(byte[] plain, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Encrypt(plain));
+        }
+
+        /// <inheritdoc />
+        public Task<byte[]> DecryptAsync(byte[] encrypted, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Decrypt(encrypted));
+        }
+
+        /// <inheritdoc />
         public byte[] Encrypt(byte[] plain)
         {
             ObjectDisposedException.ThrowIf(disposedValue, this);
