@@ -37,6 +37,27 @@ public interface IKekCredentialProvider
 }
 ```
 
+클라우드 Key Vault 등은 호스트 앱이 `IKekCredentialProvider`를 구현한다. OS 금고용 구현은 `Biz.Bizadm.KMS.Protect`(+ RID `runtime.*` 패키지)를 쓴다.
+
+## Protect (OS 자격 증명, RID runtime 패키지)
+
+소비자는 **`Biz.Bizadm.KMS.Protect`**만 참조한다. NuGet이 RID에 맞는 내부 구현 패키지를 가져온다 (직접 참조하지 않음).
+
+| 패키지 | 용도 |
+|---|---|
+| `Biz.Bizadm.KMS.Protect` | 퍼사드 / `IOsKekCredentialStore` / `OsKekCredentialProvider` |
+| `runtime.win.Biz.Bizadm.KMS.Protect` | Windows Credential Manager (`wincredman`) |
+| `runtime.osx.Biz.Bizadm.KMS.Protect` | macOS Keychain (`keychain`) |
+| `runtime.linux.Biz.Bizadm.KMS.Protect` | Linux Secret Service (`secretservice`) |
+
+```csharp
+IOsKekCredentialStore creds = OsKekCredentialProvider.CreateForCurrentOs();
+creds.StorePassword("secret"u8);
+using AesGcmKekCipher kek = AesGcmKekCipher.Create(creds, salt, iterations);
+```
+
+Linux 헤드리스에서는 프로세스 시작 전에 `GCM_CREDENTIAL_STORE=gpg` 등을 설정할 수 있다.
+
 ## IKekCipher
 
 구현체는 키 저장 방식만 다르고, 호출부는 동일하다. 대량 데이터 암호화가 아니라 **DEK wrap** 용도를 전제로 한다.
