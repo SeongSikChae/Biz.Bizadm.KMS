@@ -3,6 +3,9 @@ using Tpm2Lib;
 
 namespace Biz.Bizadm.KMS.Cipher.Tpm
 {
+    /// <summary>
+    /// TPM 2.0 내부 AES-256-CFB KEK로 키 물질을 wrap/unwrap하는 암호.
+    /// </summary>
     public sealed class TpmKekCipher : IKekCipher
     {
         private readonly Tpm2 tpm;
@@ -14,7 +17,7 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
         // private static readonly SchemeOaep OaepSha256 = new(TpmAlgId.Sha256);
         private const int AesBlockSize = 16;
 
-        public TpmKekCipher(Tpm2Device device, byte[] password, FileInfo kekBlobFile)
+        private TpmKekCipher(Tpm2Device device, byte[] password, FileInfo kekBlobFile)
         {
             ArgumentNullException.ThrowIfNull(device);
             ArgumentNullException.ThrowIfNull(password);
@@ -40,10 +43,10 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
             }
         }
 
+        /// <inheritdoc />
         public byte[] Encrypt(byte[] plain)
         {
-            if (disposedValue)
-                throw new ObjectDisposedException(nameof(TpmKekCipher));
+            ObjectDisposedException.ThrowIf(disposedValue, this);
             ArgumentNullException.ThrowIfNull(plain);
 
             // return tpm.RsaEncrypt(Kek, plain, OaepSha256, null);
@@ -57,10 +60,10 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
             return output;
         }
 
+        /// <inheritdoc />
         public byte[] Decrypt(byte[] encrypted)
         {
-            if (disposedValue)
-                throw new ObjectDisposedException(nameof(TpmKekCipher));
+            ObjectDisposedException.ThrowIf(disposedValue, this);
             ArgumentNullException.ThrowIfNull(encrypted);
             if (encrypted.Length < AesBlockSize)
                 throw new ArgumentException("Encrypted payload is shorter than the AES-CFB IV.", nameof(encrypted));
@@ -112,6 +115,7 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
         //     Dispose(disposing: false);
         // }
 
+        /// <inheritdoc />
         public void Dispose()
         {
             // 이 코드를 변경하지 마세요. 'Dispose(bool disposing)' 메서드에 정리 코드를 입력합니다.
@@ -215,18 +219,6 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
 
         private static TpmPublic CreateKekKeySpec()
         {
-            // return new TpmPublic(
-            //     TpmAlgId.Sha256,
-            //     ObjectAttr.Decrypt |
-            //     ObjectAttr.FixedParent | ObjectAttr.FixedTPM |
-            //     ObjectAttr.UserWithAuth | ObjectAttr.SensitiveDataOrigin | ObjectAttr.NoDA,
-            //     null,
-            //     new RsaParms(
-            //         new SymDefObject(),
-            //         new SchemeOaep(TpmAlgId.Sha256),
-            //         2048,
-            //         0),
-            //     new Tpm2bPublicKeyRsa());
             return new TpmPublic(
                 TpmAlgId.Sha256,
                 ObjectAttr.Decrypt | ObjectAttr.Encrypt |
@@ -235,6 +227,26 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
                 null,
                 new SymDefObject(TpmAlgId.Aes, 256, TpmAlgId.Cfb),
                 new Tpm2bDigestSymcipher());
+        }
+
+        /// <summary>
+        /// TPM 디바이스와 자격 증명·KEK blob 파일로 <see cref="TpmKekCipher"/>를 생성한다.
+        /// </summary>
+        /// <param name="device">연결된 TPM 디바이스.</param>
+        /// <param name="credentialProvider">SRK 유도용 패스워드 제공자.</param>
+        /// <param name="kekBlobFile">KEK blob 저장·로드 파일.</param>
+        /// <returns>생성된 <see cref="TpmKekCipher"/>.</returns>
+        public static TpmKekCipher Create(Tpm2Device device, IKekCredentialProvider credentialProvider, FileInfo kekBlobFile)
+        {
+            byte[] password = credentialProvider.GetPassword();
+            try
+            {
+                return new TpmKekCipher(device, password, kekBlobFile);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(password);
+            }
         }
     }
 }

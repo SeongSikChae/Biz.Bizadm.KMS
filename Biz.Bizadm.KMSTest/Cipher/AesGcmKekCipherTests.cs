@@ -14,7 +14,7 @@ namespace Biz.Bizadm.KMSTest.Cipher
         private static readonly byte[] Salt = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
         private static AesGcmKekCipher CreateCipher()
-            => new(Password, Salt, Iterations);
+            => AesGcmKekCipher.Create(new FixedPasswordCredentialProvider(Password), Salt, Iterations);
 
         [TestMethod]
         [DataRow(0)]
@@ -82,7 +82,7 @@ namespace Biz.Bizadm.KMSTest.Cipher
             using AesGcmKekCipher encryptor = CreateCipher();
             byte[] encrypted = encryptor.Encrypt(plain);
 
-            using AesGcmKekCipher decryptor = new("other-password"u8.ToArray(), Salt, Iterations);
+            using AesGcmKekCipher decryptor = AesGcmKekCipher.Create(new FixedPasswordCredentialProvider("other-password"u8.ToArray()), Salt, Iterations);
 
             Assert.ThrowsExactly<AuthenticationTagMismatchException>(() => decryptor.Decrypt(encrypted));
         }

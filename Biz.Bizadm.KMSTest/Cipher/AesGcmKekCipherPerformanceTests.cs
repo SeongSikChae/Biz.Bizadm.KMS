@@ -17,7 +17,7 @@ namespace Biz.Bizadm.KMSTest.Cipher
         public TestContext TestContext { get; set; } = null!;
 
         private static AesGcmKekCipher CreateCipher()
-            => new(Password, Salt, Iterations);
+            => AesGcmKekCipher.Create(new FixedPasswordCredentialProvider(Password), Salt, Iterations);
 
         private static byte[] CreatePlain()
         {

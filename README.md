@@ -28,10 +28,13 @@ public interface IKekCipher : IDisposable
 - 생성자: `(password, salt, iterationCount)` → 32바이트 키
 - `AesGcm` 인스턴스는 `ObjectPool`로 재사용
 - AEAD이므로 변조 시 `AuthenticationTagMismatchException`
+- `Decrypt` 실패 시 평문 버퍼를 `ZeroMemory`로 지운 뒤 예외를 다시 던진다
 
 ## TpmKekCipher
 
 TPM 2.0에 KEK를 두고 암·복호화한다. TSS.Net (`Microsoft.TSS`) 사용.
+
+생성자: `(Tpm2Device device, byte[] password, FileInfo kekBlobFile)`. 디바이스 연결은 호출부가 한다.
 
 ### 키 계층
 
@@ -84,27 +87,31 @@ swtpm socket \
 
 ### Windows `TbsDevice`
 
-로컬 TPM (TBS). `TbsDevice` + `Connect()`. RSA 연산은 swtpm보다 훨씬 느리고, AES-CFB는 칩이 명령을 허용하면 실사용 가능한 수준이다.
+로컬 TPM (TBS). TSS.Net의 `TbsDevice` + `Connect()`. RSA 연산은 swtpm보다 훨씬 느리고, AES-CFB는 칩이 명령을 허용하면 실사용 가능한 수준이다.
 
 ## 테스트
 
-자동 테스트(`dotnet test` / Run All):
+자동 테스트(CI / `dotnet test`):
+
+```bash
+dotnet test --filter "TestCategory!=Manual"
+```
 
 - `AesGcmKekCipherTests`
 - `AesGcmKekCipherPerformanceTests`
 
-수동 테스트: `[Ignore]` + `[TestCategory("Manual")]`. 실행 시 클래스의 `[Ignore]`를 잠시 제거한다.
+수동 테스트: `[TestCategory("Manual")]`만 붙인다 (`[Ignore]` 없음). CI에서는 위 필터로 제외하고, Visual Studio Test Explorer에서는 해당 클래스를 선택해 바로 실행한다. Run All에서 Manual까지 빼려면 검색창에 `-Trait:"Manual"`을 쓴다.
 
-| 클래스 | 대상 |
-|---|---|
-| `TpmKekCipherTcpDeviceTests` | swtpm `20.249.211.13:2321` |
-| `TpmKekCipherTbsDeviceTests` | Windows TBS (`[OSCondition(Windows)]`) |
-| `TpmKekCipherTcpDevicePerformanceTests` | swtpm 성능 |
-| `TpmKekCipherTbsDevicePerformanceTests` | TBS 성능 (횟수·지연 한도를 하드웨어에 맞춤) |
+TPM 기능·성능 테스트는 디바이스별 파생 클래스로 나뉜다. 공통 시나리오는 추상 베이스에 두고, 디바이스 연결만 오버라이드한다.
 
-테스트 blob은 `%TEMP%\kms-tpm-kek-*.blob`에 만들었다가 종료 시 삭제한다.
+| 클래스 | 베이스 | 대상 |
+|---|---|---|
+| `TpmKekCipherTbsDeviceTests` | `TpmKekCipherDeviceTests` | Windows TBS (`[OSCondition(Windows)]`) |
+| `TpmKekCipherTbsDevicePerformanceTests` | `TpmKekCipherDevicePerformanceTests` | TBS 성능 (횟수·지연 한도를 하드웨어에 맞춤) |
 
-TBS AES 기능 테스트는 이 환경에서 18건 통과했다.
+테스트 blob은 `%TEMP%\kms-tpm-kek-*.blob` / `kms-tpm-kek-perf-*.blob`에 만들었다가 종료 시 삭제한다.
+
+TBS AES 기능 테스트는 이 환경에서 18건 통과했다. 원격 swtpm용 TCP 테스트 클래스는 제거했으며, swtpm 검증이 필요하면 `SwtpmTpmDevice`로 동일 베이스를 파생하면 된다.
 
 ## 성능 참고 (실측)
 

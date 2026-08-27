@@ -1,4 +1,5 @@
 using Biz.Bizadm.KMS.Cipher.Tpm;
+using Biz.Bizadm.KMSTest.Cipher;
 using System.Security.Cryptography;
 using Tpm2Lib;
 
@@ -101,10 +102,7 @@ namespace Biz.Bizadm.KMSTest.Cipher.Tpm
                     cipher.Encrypt(CreatePlain(16));
 
                 Assert.Throws<TpmException>(() =>
-                {
-                    TpmKekCipher cipher = new(CreateConnectedDevice(), "other-password"u8.ToArray(), kekFile);
-                    cipher.Dispose();
-                });
+                    TpmKekCipher.Create(CreateConnectedDevice(), new FixedPasswordCredentialProvider("other-password"u8.ToArray()), kekFile));
             }
             finally
             {
@@ -231,7 +229,7 @@ namespace Biz.Bizadm.KMSTest.Cipher.Tpm
         }
 
         protected TpmKekCipher CreateCipher(FileInfo kekBlobFile)
-            => new(CreateConnectedDevice(), Password, kekBlobFile);
+            => TpmKekCipher.Create(CreateConnectedDevice(), new FixedPasswordCredentialProvider(Password), kekBlobFile);
 
         protected static FileInfo NewKekFile()
             => new(Path.Combine(Path.GetTempPath(), $"kms-tpm-kek-{Guid.NewGuid():N}.blob"));
@@ -261,33 +259,7 @@ namespace Biz.Bizadm.KMSTest.Cipher.Tpm
     [TestClass]
     [TestCategory("Manual")]
     [DoNotParallelize]
-    //[Ignore("원격 swtpm(20.249.211.13:2321) 수동 테스트입니다. 실행하려면 이 특성을 제거하세요.")]
-    public sealed class TpmKekCipherTcpDeviceTests : TpmKekCipherDeviceTests
-    {
-        private const string Host = "20.249.211.13";
-        private const int Port = 2321;
-
-        [TestMethod]
-        [Timeout(30_000, CooperativeCancellation = true)]
-        public void Connect_SwtpmTcp_Succeeds()
-        {
-            using Tpm2Device device = CreateConnectedDevice();
-            Assert.IsNotNull(device);
-        }
-
-        protected override Tpm2Device CreateConnectedDevice()
-        {
-            SwtpmTpmDevice device = new(Host, Port);
-            device.Connect();
-            return device;
-        }
-    }
-
-    [TestClass]
-    [TestCategory("Manual")]
-    [DoNotParallelize]
     [OSCondition(OperatingSystems.Windows)]
-    [Ignore("Windows TBS(TbsDevice) 수동 테스트입니다. Windows에서 이 특성을 제거한 뒤 실행하세요.")]
     public sealed class TpmKekCipherTbsDeviceTests : TpmKekCipherDeviceTests
     {
         [TestMethod]

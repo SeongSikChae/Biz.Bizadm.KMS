@@ -2,11 +2,20 @@ using Tpm2Lib;
 
 namespace Biz.Bizadm.KMS.Cipher.Tpm
 {
+    /// <summary>
+    /// SRK로 wrap된 TPM KEK의 public/private 직렬화 blob.
+    /// </summary>
+    /// <param name="Private">SRK로 wrap된 KEK private 부분.</param>
+    /// <param name="Public">KEK public 부분.</param>
     public sealed record TpmKekBlob(TpmPrivate Private, TpmPublic Public)
     {
         private static ReadOnlySpan<byte> Magic => "TKEK"u8;
         private const byte Version = 1;
 
+        /// <summary>
+        /// KEK blob을 파일에 저장한다.
+        /// </summary>
+        /// <param name="file">저장할 파일.</param>
         public void Save(FileInfo file)
         {
             ArgumentNullException.ThrowIfNull(file);
@@ -23,6 +32,11 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
             WriteBlock(writer, Marshaller.GetTpmRepresentation(Private));
         }
 
+        /// <summary>
+        /// 파일에서 KEK blob을 로드한다.
+        /// </summary>
+        /// <param name="file">로드할 파일.</param>
+        /// <returns>로드된 <see cref="TpmKekBlob"/>.</returns>
         public static TpmKekBlob Load(FileInfo file)
         {
             ArgumentNullException.ThrowIfNull(file);

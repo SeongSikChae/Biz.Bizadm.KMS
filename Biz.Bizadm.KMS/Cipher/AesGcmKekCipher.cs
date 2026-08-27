@@ -1,103 +1,34 @@
-﻿using Microsoft.Extensions.ObjectPool;
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 
 namespace Biz.Bizadm.KMS.Cipher
 {
-    internal sealed class AesGcmPolicy(byte[] key) : PooledObjectPolicy<AesGcm>
+    /// <summary>
+    /// PBKDF2-SHA256으로 유도한 키를 사용하는 소프트웨어 AES-GCM KEK 암호.
+    /// </summary>
+    public sealed class AesGcmKekCipher : AbstractAesGcmCipher, IKekCipher
     {
-        public override AesGcm Create()
+        /// <summary>
+        /// 자격 증명과 salt·반복 횟수로 KEK 암호를 생성한다.
+        /// </summary>
+        /// <param name="credentialProvider">KEK 패스워드 제공자.</param>
+        /// <param name="salt">PBKDF2 salt.</param>
+        /// <param name="iterationCount">PBKDF2 반복 횟수.</param>
+        /// <returns>생성된 <see cref="AesGcmKekCipher"/>.</returns>
+        public static AesGcmKekCipher Create(IKekCredentialProvider credentialProvider, byte[] salt, int iterationCount)
         {
-            return new AesGcm(key, 16);
-        }
-
-        public override bool Return(AesGcm obj)
-        {
-            return true;
-        }
-    }
-
-    public sealed class AesGcmKekCipher : IKekCipher
-    {
-        private const int NonceSize = 12;
-        private const int TagSize = 16;
-
-        private readonly byte[] key;
-        private readonly ObjectPool<AesGcm> aesGcmPool;
-
-        private bool disposedValue;
-
-        public AesGcmKekCipher(byte[] password, byte[] salt, int iterationCount)
-        {
-            key = Rfc2898DeriveBytes.Pbkdf2(password, salt, iterationCount, HashAlgorithmName.SHA256, 32);
-            DefaultObjectPoolProvider provider = new DefaultObjectPoolProvider
-            {
-                MaximumRetained = Environment.ProcessorCount * 2
-            };
-            aesGcmPool = provider.Create(new AesGcmPolicy(key));
-        }
-
-        public byte[] Encrypt(byte[] plain)
-        {
-            if (disposedValue)
-                throw new ObjectDisposedException(nameof(AesGcmKekCipher));
-
-            byte[] output = new byte[NonceSize + plain.Length + TagSize];
-            Span<byte> nonce = output.AsSpan(0, NonceSize);
-            Span<byte> cipher = output.AsSpan(NonceSize, plain.Length);
-            Span<byte> tag = output.AsSpan(NonceSize + plain.Length, TagSize);
-
-            RandomNumberGenerator.Fill(nonce);
-
-            AesGcm aesGcm = aesGcmPool.Get();
+            byte[] password = credentialProvider.GetPassword();
             try
             {
-                aesGcm.Encrypt(nonce, plain, cipher, tag);
-                return output;
-            } 
-            finally
-            {
-                aesGcmPool.Return(aesGcm);
-            }            
-        }
-
-        public byte[] Decrypt(byte[] encrypted)
-        {
-            if (disposedValue)
-                throw new ObjectDisposedException(nameof(AesGcmKekCipher));
-
-            if (encrypted.Length < NonceSize + TagSize)
-                throw new ArgumentException("Invalid encrypted data.", nameof(encrypted));
-
-            int cipherLength = encrypted.Length - NonceSize - TagSize;
-            ReadOnlySpan<byte> nonce = encrypted.AsSpan(0, NonceSize);
-            ReadOnlySpan<byte> cipher = encrypted.AsSpan(NonceSize, cipherLength);
-            ReadOnlySpan<byte> tag = encrypted.AsSpan(NonceSize + cipherLength, TagSize);
-
-            AesGcm aesGcm = aesGcmPool.Get();
-            byte[] plain = new byte[cipherLength];
-            try
-            {
-                aesGcm.Decrypt(nonce, cipher, tag, plain);
-                return plain;
-            }
-            catch
-            {
-                CryptographicOperations.ZeroMemory(plain);
-                throw;
+                return new AesGcmKekCipher(password, salt, iterationCount);
             }
             finally
             {
-                aesGcmPool.Return(aesGcm);
+                CryptographicOperations.ZeroMemory(password);
             }
         }
 
-        public void Dispose()
+        private AesGcmKekCipher(byte[] password, byte[] salt, int iterationCount) : base(Rfc2898DeriveBytes.Pbkdf2(password, salt, iterationCount, HashAlgorithmName.SHA256, 32))
         {
-            if (disposedValue)
-                return;
-
-            disposedValue = true;
-            CryptographicOperations.ZeroMemory(key);
         }
     }
 }
