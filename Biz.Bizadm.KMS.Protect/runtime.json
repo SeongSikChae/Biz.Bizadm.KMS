@@ -2,17 +2,17 @@
   "runtimes": {
     "win": {
       "Biz.Bizadm.KMS.Protect": {
-        "runtime.win.Biz.Bizadm.KMS.Protect": "1.0.0"
+        "Biz.Bizadm.KMS.Protect.Runtime.win": "1.0.0"
       }
     },
     "osx": {
       "Biz.Bizadm.KMS.Protect": {
-        "runtime.osx.Biz.Bizadm.KMS.Protect": "1.0.0"
+        "Biz.Bizadm.KMS.Protect.Runtime.osx": "1.0.0"
       }
     },
     "linux": {
       "Biz.Bizadm.KMS.Protect": {
-        "runtime.linux.Biz.Bizadm.KMS.Protect": "1.0.0"
+        "Biz.Bizadm.KMS.Protect.Runtime.linux": "1.0.0"
       }
     }
   }

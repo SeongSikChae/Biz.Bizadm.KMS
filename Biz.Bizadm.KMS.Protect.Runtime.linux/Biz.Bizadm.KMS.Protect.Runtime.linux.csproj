@@ -5,8 +5,8 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<RootNamespace>Biz.Bizadm.KMS.Protect</RootNamespace>
-		<AssemblyName>runtime.osx.Biz.Bizadm.KMS.Protect</AssemblyName>
-		<PackageId>runtime.osx.Biz.Bizadm.KMS.Protect</PackageId>
+		<AssemblyName>Biz.Bizadm.KMS.Protect.Runtime.linux</AssemblyName>
+		<PackageId>Biz.Bizadm.KMS.Protect.Runtime.linux</PackageId>
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<Deterministic>true</Deterministic>
@@ -15,7 +15,7 @@
 		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
 		<Version>1.0.0</Version>
 		<Authors>SeongSikChae</Authors>
-		<Description>Internal implementation package not meant for direct consumption. Please do not reference directly. macOS Keychain IKekCredentialProvider for Biz.Bizadm.KMS.Protect.</Description>
+		<Description>Internal implementation package not meant for direct consumption. Please do not reference directly. Linux Secret Service IKekCredentialProvider for Biz.Bizadm.KMS.Protect.</Description>
 		<PackageLicenseFile>LICENSE</PackageLicenseFile>
 	</PropertyGroup>
 

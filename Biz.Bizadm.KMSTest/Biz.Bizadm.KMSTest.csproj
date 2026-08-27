@@ -14,7 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Biz.Bizadm.KMS\Biz.Bizadm.KMS.csproj" />
     <ProjectReference Include="..\Biz.Bizadm.KMS.Protect\Biz.Bizadm.KMS.Protect.csproj" />
-    <ProjectReference Include="..\runtime.win.Biz.Bizadm.KMS.Protect\runtime.win.Biz.Bizadm.KMS.Protect.csproj" />
+    <ProjectReference Include="..\Biz.Bizadm.KMS.Protect.Runtime.win\Biz.Bizadm.KMS.Protect.Runtime.win.csproj" />
   </ItemGroup>
 
   <ItemGroup>

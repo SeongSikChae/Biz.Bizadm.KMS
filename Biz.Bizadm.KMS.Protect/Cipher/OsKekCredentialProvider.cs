@@ -3,7 +3,7 @@ using System.Reflection;
 namespace Biz.Bizadm.KMS.Protect.Cipher
 {
     /// <summary>
-    /// RID별 <c>runtime.*.Biz.Bizadm.KMS.Protect</c> 구현 패키지에서
+    /// RID별 <c>Biz.Bizadm.KMS.Protect.Runtime.*</c> 구현 패키지에서
     /// 현재 OS용 <see cref="IOsKekCredentialStore"/>를 로드한다.
     /// </summary>
     public static class OsKekCredentialProvider
@@ -27,7 +27,7 @@ namespace Biz.Bizadm.KMS.Protect.Cipher
             Type type = Type.GetType($"{typeName}, {assemblyName}", throwOnError: false)
                 ?? throw new InvalidOperationException(
                     $"Runtime protect package '{assemblyName}' is not available. " +
-                    "Reference Biz.Bizadm.KMS.Protect (NuGet RID restore) or the matching runtime.* package.");
+                    "Reference Biz.Bizadm.KMS.Protect (NuGet RID restore) or the matching Runtime.* package.");
 
             MethodInfo create = type.GetMethod(
                     "Create",
@@ -45,21 +45,21 @@ namespace Biz.Bizadm.KMS.Protect.Cipher
             if (OperatingSystem.IsWindows())
             {
                 return (
-                    "runtime.win.Biz.Bizadm.KMS.Protect",
+                    "Biz.Bizadm.KMS.Protect.Runtime.win",
                     "Biz.Bizadm.KMS.Protect.Cipher.WindowsCredentialManagerKekCredentialProvider");
             }
 
             if (OperatingSystem.IsMacOS())
             {
                 return (
-                    "runtime.osx.Biz.Bizadm.KMS.Protect",
+                    "Biz.Bizadm.KMS.Protect.Runtime.osx",
                     "Biz.Bizadm.KMS.Protect.Cipher.MacOsKeychainKekCredentialProvider");
             }
 
             if (OperatingSystem.IsLinux())
             {
                 return (
-                    "runtime.linux.Biz.Bizadm.KMS.Protect",
+                    "Biz.Bizadm.KMS.Protect.Runtime.linux",
                     "Biz.Bizadm.KMS.Protect.Cipher.LinuxSecretServiceKekCredentialProvider");
             }
 

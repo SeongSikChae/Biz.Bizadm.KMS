@@ -57,9 +57,9 @@ public interface IKekCredentialProvider
 | 패키지 | 용도 |
 |---|---|
 | `Biz.Bizadm.KMS.Protect` | 퍼사드 / `IOsKekCredentialStore` / `OsKekCredentialProvider` |
-| `runtime.win.Biz.Bizadm.KMS.Protect` | Windows Credential Manager (`wincredman`) |
-| `runtime.osx.Biz.Bizadm.KMS.Protect` | macOS Keychain (`keychain`) |
-| `runtime.linux.Biz.Bizadm.KMS.Protect` | Linux Secret Service (`secretservice`) |
+| `Biz.Bizadm.KMS.Protect.Runtime.win` | Windows Credential Manager (`wincredman`) |
+| `Biz.Bizadm.KMS.Protect.Runtime.osx` | macOS Keychain (`keychain`) |
+| `Biz.Bizadm.KMS.Protect.Runtime.linux` | Linux Secret Service (`secretservice`) |
 
 ```csharp
 IOsKekCredentialStore creds = OsKekCredentialProvider.CreateForCurrentOs();

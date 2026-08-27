@@ -5,8 +5,8 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<RootNamespace>Biz.Bizadm.KMS.Protect</RootNamespace>
-		<AssemblyName>runtime.win.Biz.Bizadm.KMS.Protect</AssemblyName>
-		<PackageId>runtime.win.Biz.Bizadm.KMS.Protect</PackageId>
+		<AssemblyName>Biz.Bizadm.KMS.Protect.Runtime.win</AssemblyName>
+		<PackageId>Biz.Bizadm.KMS.Protect.Runtime.win</PackageId>
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<Deterministic>true</Deterministic>

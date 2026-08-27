@@ -12,9 +12,9 @@
 		<EmbedUntrackedSources>true</EmbedUntrackedSources>
 		<IncludeSymbols>true</IncludeSymbols>
 		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
-		<Version>1.0.0</Version>
+		<Version>1.0.1</Version>
 		<Authors>SeongSikChae</Authors>
-		<Description>OS credential-store IKekCredentialProvider facade. Pulls RID-specific runtime.* implementation packages.</Description>
+		<Description>OS credential-store IKekCredentialProvider facade. Pulls RID-specific Runtime.* implementation packages.</Description>
 		<PackageLicenseFile>LICENSE</PackageLicenseFile>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 	</PropertyGroup>
