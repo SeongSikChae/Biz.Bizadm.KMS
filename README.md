@@ -1,18 +1,43 @@
 # Biz.Bizadm.KMS
 
-Key Management System 라이브러리. KEK(Key Encryption Key)로 평문을 wrap/unwrap하는 `IKekCipher`와, 소프트웨어·TPM 백엔드를 제공한다.
+Key Management System 라이브러리. 공통 `ICipher` 아래에 KEK wrap/unwrap용 `IKekCipher`와 데이터 암·복호화용 `IDekCipher`를 두고, 소프트웨어·TPM 백엔드를 제공한다.
 
 대상 프레임워크: `net10.0`
 
-## IKekCipher
+## 계층
+
+```text
+ICipher
+├── IKekCipher          # 키 물질 wrap/unwrap (DEK 보호)
+│   ├── AesGcmKekCipher # 소프트웨어 AES-GCM
+│   └── TpmKekCipher    # TPM AES-256-CFB
+└── IDekCipher          # 데이터 암·복호화
+    └── AesGcmDekCipher # AES-GCM (키는 KEK로 wrap되어 파일/바이트에 보관)
+```
+
+`AesGcmKekCipher`와 `AesGcmDekCipher`는 `AbstractAesGcmCipher`를 공유한다. 출력 형식은 `nonce(12) || cipher || tag(16)`.
 
 ```csharp
-public interface IKekCipher : IDisposable
+public interface ICipher : IDisposable
 {
     byte[] Encrypt(byte[] plain);
     byte[] Decrypt(byte[] encrypted);
 }
+
+public interface IKekCipher : ICipher { }
+public interface IDekCipher : ICipher { }
 ```
+
+KEK 생성에 쓰는 패스워드는 `IKekCredentialProvider`로 주입한다. `Create`가 `GetPassword()`로 받은 뒤 사용 후 `ZeroMemory`한다.
+
+```csharp
+public interface IKekCredentialProvider
+{
+    byte[] GetPassword();
+}
+```
+
+## IKekCipher
 
 구현체는 키 저장 방식만 다르고, 호출부는 동일하다. 대량 데이터 암호화가 아니라 **DEK wrap** 용도를 전제로 한다.
 
@@ -25,16 +50,25 @@ public interface IKekCipher : IDisposable
 
 소프트웨어 KEK. BouncyCastle을 쓰지 않으며 .NET `AesGcm` + `Rfc2898DeriveBytes.Pbkdf2`를 사용한다.
 
-- 생성자: `(password, salt, iterationCount)` → 32바이트 키
-- `AesGcm` 인스턴스는 `ObjectPool`로 재사용
+- 생성: `AesGcmKekCipher.Create(IKekCredentialProvider, salt, iterationCount)` → 32바이트 키
+- `AesGcm` 인스턴스는 `ObjectPool`로 재사용 (`AbstractAesGcmCipher`)
 - AEAD이므로 변조 시 `AuthenticationTagMismatchException`
 - `Decrypt` 실패 시 평문 버퍼를 `ZeroMemory`로 지운 뒤 예외를 다시 던진다
+
+## AesGcmDekCipher
+
+DEK로 데이터를 암·복호화한다. DEK 자체는 `IKekCipher`로 wrap되어 파일 또는 바이트로 보관된다.
+
+- `Create(IKekCipher, FileInfo)` — 파일이 있으면 로드, 없으면 32바이트 DEK를 생성·wrap 후 원자적 저장
+- `Create(IKekCipher, byte[] encryptedKey)` — wrap된 DEK 바이트에서 바로 생성
+- 파일 저장은 temp 파일 기록 후 `File.Move`로 원자적으로 반영한다. 경쟁으로 파일이 이미 생기면 기존 파일을 다시 로드한다.
+- `Dispose` 시 DEK 키를 `ZeroMemory`한다 (`AbstractAesGcmCipher`)
 
 ## TpmKekCipher
 
 TPM 2.0에 KEK를 두고 암·복호화한다. TSS.Net (`Microsoft.TSS`) 사용.
 
-생성자: `(Tpm2Device device, byte[] password, FileInfo kekBlobFile)`. 디바이스 연결은 호출부가 한다.
+생성: `TpmKekCipher.Create(Tpm2Device device, IKekCredentialProvider credentialProvider, FileInfo kekBlobFile)`. 디바이스 연결은 호출부가 한다.
 
 ### 키 계층
 
@@ -47,7 +81,7 @@ TPM 2.0에 KEK를 두고 암·복호화한다. TSS.Net (`Microsoft.TSS`) 사용.
 
 파일 매직 `TKEK`, version `1`, TPM `TpmPublic` / `TpmPrivate` 직렬화. 개인키 물질은 SRK로 wrap된 채 디스크에 저장되고, 같은 SRK(같은 password)로만 Load된다.
 
-`FileInfo.Exists`는 캐시되므로 생성자는 `Refresh()` 후 존재 여부를 본다.
+`FileInfo.Exists`는 캐시되므로 생성·로드 경로는 `Refresh()` 후 존재 여부를 본다.
 
 ### AES-256-CFB
 
@@ -63,7 +97,7 @@ TPM 2.0은 GCM을 지원하지 않아 CFB를 쓴다.
 
 `TpmKekCipher`는 `Tpm2Device`만 받는다. 연결은 호출부가 한다.
 
-### `SwtpmTpmDevice`
+### `SwtpmTpmDevice` (`Cipher.Tpm.Device`)
 
 Rocky Linux **swtpm** TCP용. Microsoft `TcpTpmDevice`(mssim handshake)와는 프로토콜이 다르다.
 
@@ -99,10 +133,11 @@ dotnet test --filter "TestCategory!=Manual"
 
 - `AesGcmKekCipherTests`
 - `AesGcmKekCipherPerformanceTests`
+- `AesGcmDekCipherTests`
 
 수동 테스트: `[TestCategory("Manual")]`만 붙인다 (`[Ignore]` 없음). CI에서는 위 필터로 제외하고, Visual Studio Test Explorer에서는 해당 클래스를 선택해 바로 실행한다. Run All에서 Manual까지 빼려면 검색창에 `-Trait:"Manual"`을 쓴다.
 
-TPM 기능·성능 테스트는 디바이스별 파생 클래스로 나뉜다. 공통 시나리오는 추상 베이스에 두고, 디바이스 연결만 오버라이드한다.
+TPM 기능·성능 테스트는 디바이스별 파생 클래스로 나뉜다. 공통 시나리오는 추상 베이스에 두고, 디바이스 연결만 오버라이드한다. 자격 증명은 테스트용 `FixedPasswordCredentialProvider`를 쓴다.
 
 | 클래스 | 베이스 | 대상 |
 |---|---|---|
