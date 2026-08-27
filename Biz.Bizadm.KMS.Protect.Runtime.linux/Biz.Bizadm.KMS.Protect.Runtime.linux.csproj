@@ -17,10 +17,15 @@
 		<Authors>SeongSikChae</Authors>
 		<Description>Internal implementation package not meant for direct consumption. Please do not reference directly. Linux Secret Service IKekCredentialProvider for Biz.Bizadm.KMS.Protect.</Description>
 		<PackageLicenseFile>LICENSE</PackageLicenseFile>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
 	</PropertyGroup>
 
 	<ItemGroup>
 		<None Include="..\LICENSE">
+			<Pack>True</Pack>
+			<PackagePath>\</PackagePath>
+		</None>
+		<None Include="README.md">
 			<Pack>True</Pack>
 			<PackagePath>\</PackagePath>
 		</None>
