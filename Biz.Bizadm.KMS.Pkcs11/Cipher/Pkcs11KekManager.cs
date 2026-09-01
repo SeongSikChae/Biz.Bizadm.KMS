@@ -8,7 +8,6 @@ namespace Biz.Bizadm.KMS.Pkcs11.Cipher
     public sealed class Pkcs11KekManager : KekManagerBase
     {
         private readonly Pkcs11LibraryContext context;
-        private bool disposedValue;
 
         private Pkcs11KekManager(Pkcs11LibraryContext context, Pkcs11KekCipher initial) : base(initial)
         {
@@ -41,7 +40,6 @@ namespace Biz.Bizadm.KMS.Pkcs11.Cipher
         /// <returns>새 Current KEK.</returns>
         public Pkcs11KekCipher Rotate(string newKeyLabel, Pkcs11KekOptions? options = null)
         {
-            ObjectDisposedException.ThrowIf(disposedValue, this);
             Pkcs11KekCipher current = (Pkcs11KekCipher)Current;
             Pkcs11KekCipher rotated = current.Rotate(newKeyLabel, options);
             SetCurrent(rotated);
@@ -56,22 +54,18 @@ namespace Biz.Bizadm.KMS.Pkcs11.Cipher
         /// <returns>등록된 KEK.</returns>
         public Pkcs11KekCipher LoadKey(string keyLabel, Pkcs11KekOptions? options = null)
         {
-            ObjectDisposedException.ThrowIf(disposedValue, this);
             Pkcs11KekCipher cipher = Pkcs11KekCipher.Create(context, keyLabel, createIfMissing: false, options);
             Register(cipher);
             return cipher;
         }
 
         /// <inheritdoc />
-        public new void Dispose()
+        protected override void Dispose(bool disposing)
         {
-            if (disposedValue)
-                return;
+            if (disposing && !IsDisposed)
+                context.Dispose();
 
-            disposedValue = true;
-            base.Dispose();
-            context.Dispose();
-            GC.SuppressFinalize(this);
+            base.Dispose(disposing);
         }
     }
 }

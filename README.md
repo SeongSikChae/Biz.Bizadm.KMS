@@ -55,6 +55,8 @@ KEK 버전 레지스트리와 DEK re-wrap 오케스트레이션을 담당한다.
 
 로테이션 후 이전 KEK는 registry에 남아 아직 re-wrap되지 않은 DEK도 처리할 수 있다. 프로세스 재시작 등으로 registry가 비어 있으면 `LoadKey`로 envelope에 기록된 old KEK를 다시 올린다. `LoadKey`는 **Current를 바꾸지 않고** registry에만 등록한다. 모든 DEK re-wrap이 끝나면 `Release(oldKeyId)`로 이전 KEK를 해제한다. `Current`는 `Release`할 수 없다.
 
+동일 `KeyId`로 `Rotate`/`LoadKey`를 호출하면 `InvalidOperationException`이 발생하고, 등록에 실패한 cipher는 즉시 `Dispose`된다. `RewrapDekAsync`/`RewrapDekFileAsync`는 lock 밖에서 await하므로, 비동기 re-wrap 진행 중에는 `Release`/`Dispose`를 호출하지 않는다.
+
 ```csharp
 using AesGcmKekManager manager = AesGcmKekManager.Create(credentialProvider, salt, iterations);
 using AesGcmDekCipher dek = AesGcmDekCipher.Create(manager.Current, new FileInfo("dek.bin"));

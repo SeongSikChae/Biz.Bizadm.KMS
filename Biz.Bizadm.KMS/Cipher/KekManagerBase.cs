@@ -11,6 +11,11 @@ namespace Biz.Bizadm.KMS.Cipher
         private readonly Lock sync = new();
         private bool disposedValue;
 
+        /// <summary>
+        /// Manager가 dispose되었는지 여부.
+        /// </summary>
+        protected bool IsDisposed => disposedValue;
+
         /// <inheritdoc />
         /// <remarks>내부에서 Current KEK를 읽거나 바꿀 때는 <see cref="CurrentUnsafe"/>를 사용한다.</remarks>
         public IKekCipher Current
@@ -70,29 +75,53 @@ namespace Biz.Bizadm.KMS.Cipher
         protected void Register(IKekCipher cipher)
         {
             ArgumentNullException.ThrowIfNull(cipher);
-            lock (sync)
+            try
             {
-                ObjectDisposedException.ThrowIf(disposedValue, this);
+                lock (sync)
+                {
+                    ObjectDisposedException.ThrowIf(disposedValue, this);
 
-                if (registry.ContainsKey(cipher.KeyId))
-                    throw new InvalidOperationException($"KEK with KeyId '{cipher.KeyId}' is already registered.");
+                    if (registry.ContainsKey(cipher.KeyId))
+                        throw new InvalidOperationException($"KEK with KeyId '{cipher.KeyId}' is already registered.");
 
-                registry[cipher.KeyId] = cipher;
+                    registry[cipher.KeyId] = cipher;
+                }
+            }
+            catch
+            {
+                cipher.Dispose();
+                throw;
             }
         }
 
         /// <summary>
-        /// Current KEK를 교체한다.
+        /// Current KEK를 교체한다. 동일 KeyId가 이미 registry에 있으면 거부한다.
         /// </summary>
         /// <param name="cipher">새 Current KEK.</param>
+        /// <exception cref="InvalidOperationException">동일 KeyId가 이미 등록된 경우.</exception>
         protected void SetCurrent(IKekCipher cipher)
         {
             ArgumentNullException.ThrowIfNull(cipher);
-            lock (sync)
+            try
             {
-                ObjectDisposedException.ThrowIf(disposedValue, this);
-                registry[cipher.KeyId] = cipher;
-                CurrentUnsafe = cipher;
+                lock (sync)
+                {
+                    ObjectDisposedException.ThrowIf(disposedValue, this);
+
+                    if (registry.TryGetValue(cipher.KeyId, out IKekCipher? existing)
+                        && !ReferenceEquals(existing, cipher))
+                    {
+                        throw new InvalidOperationException($"KEK with KeyId '{cipher.KeyId}' is already registered.");
+                    }
+
+                    registry[cipher.KeyId] = cipher;
+                    CurrentUnsafe = cipher;
+                }
+            }
+            catch
+            {
+                cipher.Dispose();
+                throw;
             }
         }
 
@@ -198,23 +227,35 @@ namespace Biz.Bizadm.KMS.Cipher
             cipher.Dispose();
         }
 
+        /// <summary>
+        /// 파생 Manager에서 추가 리소스 정리 전에 호출할 수 있는 dispose 훅.
+        /// </summary>
+        /// <param name="disposing">관리 리소스를 정리할지 여부.</param>
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposedValue)
+                return;
+
+            if (disposing)
+            {
+                List<IKekCipher> toDispose;
+                lock (sync)
+                {
+                    toDispose = registry.Values.ToList();
+                    registry.Clear();
+                }
+
+                foreach (IKekCipher cipher in toDispose)
+                    cipher.Dispose();
+            }
+
+            disposedValue = true;
+        }
+
         /// <inheritdoc />
         public void Dispose()
         {
-            List<IKekCipher> toDispose;
-            lock (sync)
-            {
-                if (disposedValue)
-                    return;
-
-                disposedValue = true;
-                toDispose = registry.Values.ToList();
-                registry.Clear();
-            }
-
-            foreach (IKekCipher cipher in toDispose)
-                cipher.Dispose();
-
+            Dispose(disposing: true);
             GC.SuppressFinalize(this);
         }
     }

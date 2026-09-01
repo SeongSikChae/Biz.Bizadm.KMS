@@ -12,7 +12,7 @@
 		<EmbedUntrackedSources>true</EmbedUntrackedSources>
 		<IncludeSymbols>true</IncludeSymbols>
 		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
-		<Version>1.0.2</Version>
+		<Version>1.0.3</Version>
 		<Authors>SeongSikChae</Authors>
 		<Description>KMS Package</Description>
 		<PackageLicenseFile>LICENSE</PackageLicenseFile>

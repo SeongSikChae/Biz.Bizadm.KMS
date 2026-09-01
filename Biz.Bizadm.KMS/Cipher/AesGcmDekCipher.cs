@@ -170,8 +170,32 @@ namespace Biz.Bizadm.KMS.Cipher
             if (string.IsNullOrEmpty(directory))
                 throw new ArgumentException("Path must include a directory.", nameof(path));
 
-            using FileStream stream = new(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-            stream.Write(data);
+            string tempPath = Path.Combine(directory, Path.GetRandomFileName());
+
+            try
+            {
+                File.WriteAllBytes(tempPath, data);
+                File.Move(tempPath, path, overwrite: false);
+            }
+            catch
+            {
+                TryDelete(tempPath);
+                throw;
+            }
+        }
+
+        private static void TryDelete(string path)
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
         }
 
         internal static void WriteAllBytesAtomic(string path, byte[] data)
@@ -189,17 +213,7 @@ namespace Biz.Bizadm.KMS.Cipher
             }
             catch
             {
-                try
-                {
-                    File.Delete(tempPath);
-                }
-                catch (IOException)
-                {
-                }
-                catch (UnauthorizedAccessException)
-                {
-                }
-
+                TryDelete(tempPath);
                 throw;
             }
         }

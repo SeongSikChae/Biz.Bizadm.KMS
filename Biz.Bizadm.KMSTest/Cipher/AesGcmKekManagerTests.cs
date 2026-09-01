@@ -171,6 +171,24 @@ namespace Biz.Bizadm.KMSTest.Cipher
 
             Assert.ThrowsExactly<InvalidOperationException>(() =>
                 manager.LoadKey(new FixedPasswordCredentialProvider(Password), Salt, Iterations));
+
+            Assert.HasCount(1, manager.KnownKeyIds);
+        }
+
+        [TestMethod]
+        public void Rotate_DuplicateKeyId_ThrowsInvalidOperationException()
+        {
+            using AesGcmKekManager manager = AesGcmKekManager.Create(
+                new FixedPasswordCredentialProvider(Password),
+                Salt,
+                Iterations);
+            string initialKeyId = manager.Current.KeyId;
+
+            Assert.ThrowsExactly<InvalidOperationException>(() =>
+                manager.Rotate(new FixedPasswordCredentialProvider(Password), Salt, Iterations));
+
+            Assert.AreEqual(initialKeyId, manager.Current.KeyId);
+            Assert.HasCount(1, manager.KnownKeyIds);
         }
 
         [TestMethod]
