@@ -329,31 +329,7 @@ TPM 2.0은 GCM을 지원하지 않아 CFB를 쓴다.
 
 `TpmKekCipher`는 `Tpm2Device`만 받는다. 연결은 호출부가 한다.
 
-### `SwtpmTpmDevice` (`Cipher.Tpm.Device`)
-
-Rocky Linux **swtpm** TCP용. Microsoft `TcpTpmDevice`(mssim handshake)와는 프로토콜이 다르다.
-
-- 명령 포트: raw TPM 프레임 (기본 `2321`)
-- `not-need-init`이면 control `CMD_INIT` 불필요
-- `startup-clear`가 없으면 `Connect()`에서 `TPM2_Startup(SU_CLEAR)` (이미 started면 `TPM_RC_INITIALIZE` 무시)
-
-예시:
-
-```bash
-swtpm socket \
-    --tpm2 \
-    --tpmstate dir=/swtpm \
-    --server type=tcp,port=2321,bindaddr=0.0.0.0 \
-    --ctrl type=tcp,port=2322,bindaddr=0.0.0.0 \
-    --flags not-need-init \
-    --daemon
-```
-
-`disconnect`가 없으면 연결을 유지한다. 한 연결에서 명령을 직렬 처리하므로 `TpmKekCipher` 동시 호출은 하지 않는다.
-
-### Windows `TbsDevice`
-
-로컬 TPM (TBS). TSS.Net의 `TbsDevice` + `Connect()`. `TpmKekCipher`는 기본 AES-256-CFB 또는 `TpmKekOptions`로 RSA-OAEP-256을 선택할 수 있다.
+Windows에서는 TSS.Net `TbsDevice` + `Connect()`로 로컬 TPM(TBS)에 연결한다. `TpmKekCipher`는 기본 AES-256-CFB 또는 `TpmKekOptions`로 RSA-OAEP-256을 선택할 수 있다.
 
 ## 테스트
 
@@ -396,7 +372,27 @@ PKCS#11(SoftHSM) 수동 테스트 환경 변수: `PKCS11_LIBRARY_PATH`, `PKCS11_
 
 테스트 blob은 `%TEMP%\kms-tpm-kek-*.blob` / `kms-tpm-kek-perf-*.blob`에 만들었다가 종료 시 삭제한다.
 
-TBS AES 기능 테스트는 이 환경에서 18건 통과했다. 원격 swtpm용 TCP 테스트 클래스는 제거했으며, swtpm 검증이 필요하면 `SwtpmTpmDevice`로 동일 베이스를 파생하면 된다.
+TBS AES 기능 테스트는 이 환경에서 18건 통과했다.
+
+### swtpm Manual 테스트 (`SwtpmTpmDevice`)
+
+Rocky Linux **swtpm** TCP 검증용 어댑터는 `Biz.Bizadm.KMSTest/Cipher/Tpm/Device/SwtpmTpmDevice.cs`에 있다. Microsoft `TcpTpmDevice`(mssim handshake)와는 프로토콜이 다르다. swtpm 검증이 필요하면 `TpmKekCipherDeviceTests`를 파생하고 이 디바이스로 `Tpm2Device`를 연결하면 된다.
+
+- 명령 포트: raw TPM 프레임 (기본 `2321`)
+- `not-need-init`이면 control `CMD_INIT` 불필요
+- `startup-clear`가 없으면 `Connect()`에서 `TPM2_Startup(SU_CLEAR)` (이미 started면 `TPM_RC_INITIALIZE` 무시)
+
+```bash
+swtpm socket \
+    --tpm2 \
+    --tpmstate dir=/swtpm \
+    --server type=tcp,port=2321,bindaddr=0.0.0.0 \
+    --ctrl type=tcp,port=2322,bindaddr=0.0.0.0 \
+    --flags not-need-init \
+    --daemon
+```
+
+`disconnect`가 없으면 연결을 유지한다. 한 연결에서 명령을 직렬 처리하므로 `TpmKekCipher` 동시 호출은 하지 않는다.
 
 ## 성능 참고 (실측)
 

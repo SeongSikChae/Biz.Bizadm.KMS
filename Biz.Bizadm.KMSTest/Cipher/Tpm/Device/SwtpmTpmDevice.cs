@@ -2,14 +2,14 @@ using System.Buffers.Binary;
 using System.Net.Sockets;
 using Tpm2Lib;
 
-namespace Biz.Bizadm.KMS.Cipher.Tpm.Device
+namespace Biz.Bizadm.KMSTest.Cipher.Tpm.Device
 {
     /// <summary>
-    /// Rocky Linux swtpm TCP 프론트엔드용 디바이스.
+    /// Rocky Linux swtpm TCP 프론트엔드용 Manual 테스트 디바이스.
     /// 명령 포트에는 raw TPM 프레임을 보내고, 제어 채널(port+1)은 swtpm control protocol을 사용한다.
     /// Microsoft <see cref="TcpTpmDevice"/>의 mssim handshake와는 호환되지 않는다.
     /// </summary>
-    public sealed class SwtpmTpmDevice : Tpm2Device
+    internal sealed class SwtpmTpmDevice : Tpm2Device
     {
         private const int DefaultTimeoutMs = 15_000;
         private const int ControlTimeoutMs = 2_000;
