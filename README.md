@@ -1,6 +1,6 @@
 # Biz.Bizadm.KMS
 
-Key Management System 라이브러리. 공통 `ICipher` 아래에 KEK wrap/unwrap용 `IKekCipher`와 데이터 암·복호화용 `IDekCipher`를 두고, 소프트웨어·TPM·Azure Key Vault 백엔드를 제공한다.
+Key Management System 라이브러리. 공통 `ICipher` 아래에 KEK wrap/unwrap용 `IKekCipher`와 데이터 암·복호화용 `IDekCipher`를 두고, 소프트웨어·TPM·Azure Key Vault·PKCS#11 HSM 백엔드를 제공한다.
 
 대상 프레임워크: `net10.0`
 
@@ -11,11 +11,13 @@ ICipher
 ├── IKekCipher                       # 키 물질 wrap/unwrap (DEK 보호)
 │   ├── AesGcmKekCipher              # 소프트웨어 AES-GCM
 │   ├── TpmKekCipher                 # TPM AES-256-CFB
-│   └── AzureKeyVaultKekCipher       # Azure Key Vault RSA-OAEP wrap
+│   ├── AzureKeyVaultKekCipher       # Azure Key Vault RSA-OAEP wrap
+│   └── Pkcs11KekCipher              # PKCS#11 HSM RSA-OAEP wrap (별도 패키지)
 ├── IKekManager                      # KEK 버전 관리·DEK re-wrap
 │   ├── AesGcmKekManager
 │   ├── TpmKekManager
-│   └── AzureKeyVaultKekManager
+│   ├── AzureKeyVaultKekManager
+│   └── Pkcs11KekManager
 └── IDekCipher                       # 데이터 암·복호화
     └── AesGcmDekCipher              # AES-GCM (DEK는 envelope로 보관)
 ```
@@ -47,6 +49,7 @@ KEK 버전 레지스트리와 DEK re-wrap 오케스트레이션을 담당한다.
 | `AesGcmKekManager` | `Rotate(IKekCredentialProvider, byte[] newSalt, int iterationCount)` |
 | `AzureKeyVaultKekManager` | `RotateAsync(CancellationToken)` |
 | `TpmKekManager` | `Rotate(FileInfo newKekBlobFile)` |
+| `Pkcs11KekManager` | `Rotate(string newKeyLabel)` |
 
 공통 API: `Current`, `Resolve(keyId)`, `RewrapDek(envelope)`, `RewrapDekFile(dekFile)`, `Release(keyId)`.
 
@@ -73,6 +76,7 @@ manager.Release(oldKeyId);
 | `AesGcmKekCipher` | `aesgcm:{SHA256(derivedKey)}` |
 | `AzureKeyVaultKekCipher` | `azurekv:{keyName}:{version}` |
 | `TpmKekCipher` | `tpm:{SHA256(kekPublic)}` |
+| `Pkcs11KekCipher` | `pkcs11:{SHA256(modulus\|\|exponent)}` |
 
 wrap된 DEK는 **envelope 포맷**(breaking change)으로 저장한다. raw ciphertext는 더 이상 읽지 않는다.
 
@@ -87,7 +91,7 @@ wrap된 DEK는 **envelope 포맷**(breaking change)으로 저장한다. raw ciph
 
 저수준 re-wrap: `targetKek.RewrapDek(sourceKek, wrappedDek)` 또는 `AesGcmDekCipher.Rewrap(source, target, dekFile)`.
 
-로컬 AES·TPM 구현의 `*Async`는 동기 경로를 `Task.FromResult`로 감싼다. Azure Key Vault 구현은 SDK 비동기 API를 그대로 사용한다.
+로컬 AES·TPM·PKCS#11 구현의 `*Async`는 동기 경로를 `Task.FromResult`로 감싼다. Azure Key Vault 구현은 SDK 비동기 API를 그대로 사용한다.
 
 KEK 생성에 쓰는 패스워드는 `IKekCredentialProvider`로 주입한다. `Create`가 `GetPassword()`로 받은 뒤 사용 후 `ZeroMemory`한다.
 
@@ -134,6 +138,7 @@ Linux 헤드리스에서는 프로세스 시작 전에 `GCM_CREDENTIAL_STORE=gpg
 | `AesGcmKekCipher` | PBKDF2-SHA256으로 유도 | AES-256-GCM (`System.Security.Cryptography`) | `nonce(12) \|\| cipher \|\| tag(16)` |
 | `TpmKekCipher` | TPM 내부 AES-256 키 (SRK 자식) | TPM `EncryptDecrypt` AES-256-CFB | `iv(16) \|\| cipher` |
 | `AzureKeyVaultKekCipher` | Key Vault RSA-4096 (Wrap/Unwrap) | RSA-OAEP-256 (`CryptographyClient`) | wrap된 키 바이트 |
+| `Pkcs11KekCipher` | HSM RSA-4096 (토큰 영구 키) | RSA-OAEP-256 (`C_WrapKey`/`C_UnwrapKey`) | wrap된 키 바이트 |
 
 ## AesGcmKekCipher
 
@@ -184,6 +189,83 @@ Azure Key Vault Secret에 보관한 32바이트 패스워드를 `IKekCredentialP
 - 생성: `new AzureKeyVaultKekCredentialProvider(Uri vaultUri, TokenCredential credential, string secretName)`
 - Secret이 없으면 랜덤 32바이트를 Base64로 저장한 뒤 재조회한다. 동시 생성·soft-delete는 cipher와 같이 재조회/recover로 처리한다.
 - `GetPassword` / `GetPasswordAsync` 모두 지원한다. 반환 바이트는 호출부가 사용 후 `ZeroMemory`해야 한다.
+
+## PKCS#11 HSM (`Biz.Bizadm.KMS.Pkcs11`)
+
+Thales Luna·nCipher·SoftHSM2 등 PKCS#11 호환 HSM으로 DEK를 wrap/unwrap한다. 메인 `Biz.Bizadm.KMS`와 별도 NuGet 패키지이며, `Pkcs11Interop`를 사용한다.
+
+> **검증 범위:** 현재 `Pkcs11KekCipher`·`Pkcs11KekManager`는 **SoftHSM 2.5.0(소프트웨어 에뮬레이터)** Manual 테스트만 수행했다. Thales Luna·nCipher·AWS CloudHSM 등 **실물 HSM에서는 아직 검증되지 않았다.** 프로덕션 투입 전에는 대상 HSM에서 `Pkcs11KekOptions`(wrap 메커니즘·RSA 키 크기)를 벤더 권장값에 맞춰 별도 Manual 테스트 클래스를 추가하는 것을 권장한다.
+
+소비자는 **`Biz.Bizadm.KMS` + `Biz.Bizadm.KMS.Pkcs11`**을 참조한다. cryptoki DLL/SO 경로는 호스트가 런타임에 지정한다.
+
+```csharp
+using Biz.Bizadm.KMS.Cipher;
+using Biz.Bizadm.KMS.Pkcs11.Cipher;
+
+using Pkcs11LibraryContext context = Pkcs11LibraryContext.Create(
+    @"C:\SoftHSM2\lib\softhsm2-x64.dll",
+    slotId: 0,
+    pinProvider);
+using Pkcs11KekManager manager = Pkcs11KekManager.Create(context, "my-kek-label");
+using AesGcmDekCipher dek = AesGcmDekCipher.Create(manager.Current, new FileInfo("dek.bin"));
+
+string oldKeyId = manager.Current.KeyId;
+manager.Rotate("my-kek-label-v2");
+manager.RewrapDekFile(new FileInfo("dek.bin"));
+manager.Release(oldKeyId);
+```
+
+### `Pkcs11LibraryContext`
+
+- PKCS#11 라이브러리 로드, 슬롯 선택, USER PIN 로그인(`IKekCredentialProvider`)
+- RW 세션 1개 + `SemaphoreSlim`으로 HSM 호출 직렬화 (동시 호출 금지)
+- `Pkcs11KekManager`가 컨텍스트 수명을 관리한다. Cipher만 단독 사용 시 호출부가 `Dispose`한다.
+
+### `Pkcs11KekCipher`
+
+- 생성: `Pkcs11KekCipher.Create(context, keyLabel, createIfMissing: true)`
+- HSM에서 `CKA_LABEL`로 RSA 키 쌍을 찾고, 없으면 RSA-4096을 생성한다.
+- `Encrypt`/`Decrypt` — DEK(32바이트)를 일시 AES 객체로 만든 뒤 RSA-OAEP-256으로 `C_WrapKey`/`C_UnwrapKey`
+- `Rotate(newKeyLabel)` — HSM에 새 RSA 키 쌍 생성 후 새 인스턴스 반환
+- `KeyId`: `pkcs11:{SHA256(modulus||exponent)}`
+- `Pkcs11KekOptions`로 OAEP 메커니즘·RSA 키 크기를 벤더에 맞게 조정할 수 있다.
+- KEK 개인키 물질은 HSM 밖으로 나오지 않는다.
+
+### SoftHSM2 로컬 설정 예시
+
+```bash
+# Linux 예시
+export SOFTHSM2_CONF=$HOME/softhsm2.conf
+softhsm2-util --init-token --slot 0 --label "kms-test" --pin 1234 --so-pin 0000
+
+# 키 확인
+pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so --login --pin 1234 --list-objects
+```
+
+Windows portable 예시 (`SOFTHSM2_CONF`·`PATH` 설정 후):
+
+```powershell
+$base = "C:\path\to\SoftHSM2"
+$env:SOFTHSM2_CONF = "$base\etc\softhsm2.conf"
+$env:PATH = "$base\bin;$base\lib;" + $env:PATH
+& "$base\bin\softhsm2-util.exe" --init-token --slot 0 --label "kms-test" --pin 1234 --so-pin 00000000
+```
+
+수동 테스트 환경 변수:
+
+| 변수 | 예시 | 비고 |
+|---|---|---|
+| `PKCS11_LIBRARY_PATH` | `...\lib\softhsm2-x64.dll` | 64비트 .NET |
+| `PKCS11_PIN` | `1234` | `--init-token` 시 지정한 USER PIN |
+| `PKCS11_SLOT_ID` | `1590757401` | 생략 가능 — 초기화된 토큰 슬롯 자동 탐색 |
+
+**SoftHSM 2.5.0 Manual 테스트 프로파일:** `Pkcs11KekCipher` 기본값(RSA-OAEP-256)은 SoftHSM 2.5.0에서 `CKR_ARGUMENTS_BAD`가 날 수 있다. 테스트는 `SoftHsmPkcs11TestProfile`로 **CKM_RSA_PKCS + RSA-2048** 옵션을 주입한다. 프로덕션 HSM 검증은 벤더별로 별도 프로파일·Manual 테스트 클래스를 추가한다.
+
+```powershell
+$env:PKCS11_LIBRARY_PATH = "C:\path\to\SoftHSM2\lib\softhsm2-x64.dll"
+$env:PKCS11_PIN = "1234"
+dotnet test --filter "FullyQualifiedName~SoftHsm"
+```
 
 ## TpmKekCipher
 
@@ -265,7 +347,7 @@ dotnet test --filter "TestCategory!=Manual"
 
 수동 테스트: `[TestCategory("Manual")]`만 붙인다 (`[Ignore]` 없음). CI에서는 위 필터로 제외하고, Visual Studio Test Explorer에서는 해당 클래스를 선택해 바로 실행한다. Run All에서 Manual까지 빼려면 검색창에 `-Trait:"Manual"`을 쓴다.
 
-TPM 기능·성능 테스트는 디바이스별 파생 클래스로 나뉜다. 공통 시나리오는 추상 베이스에 두고, 디바이스 연결만 오버라이드한다. 자격 증명은 테스트용 `FixedPasswordCredentialProvider`를 쓴다.
+TPM 기능·성능 테스트는 디바이스별 파생 클래스로 나뉜다. PKCS#11도 동일하게 추상 베이스(`Pkcs11KekCipherDeviceTests`)에 공통 시나리오를 두고, SoftHSM 연결만 파생 클래스에서 구현한다. 자격 증명은 테스트용 `FixedPasswordCredentialProvider`를 쓴다.
 
 | 클래스 | 베이스 | 대상 |
 |---|---|---|
@@ -275,8 +357,15 @@ TPM 기능·성능 테스트는 디바이스별 파생 클래스로 나뉜다. �
 | `AzureKeyVaultKekCipherPerformanceTests` | — | Key Vault RSA wrap 성능 (`[OSCondition(Windows)]`) |
 | `AzureKeyVaultKekManagerTests` | — | Manager Rotate + re-wrap (`[OSCondition(Windows)]`) |
 | `AzureKeyVaultKekCredentialProviderTests` | — | Key Vault Secret 패스워드 (`[OSCondition(Windows)]`) |
+| `Pkcs11KekCipherSoftHsmTests` | `Pkcs11KekCipherDeviceTests` | SoftHSM2 (`SoftHsmPkcs11TestProfile`, CKM_RSA_PKCS) |
+| `Pkcs11KekManagerSoftHsmTests` | `Pkcs11KekManagerDeviceTests` | Manager Rotate + re-wrap |
+| `Pkcs11KekCipherSoftHsmPerformanceTests` | — | SoftHSM2 wrap 성능 (`[TestCategory("Manual")]`) |
 
 Azure 수동 테스트 환경 변수: `AZURE_KEY_VAULT_URL`, `AZURE_TENANTID`, `AZURE_CLIENT_ID`, `AZURE_KEY_VAULT_THUMBPRINT`(CurrentUser\My 인증서).
+
+PKCS#11(SoftHSM) 수동 테스트 환경 변수: `PKCS11_LIBRARY_PATH`, `PKCS11_PIN`. `PKCS11_SLOT_ID`는 생략 가능.
+
+`Pkcs11KekCipher` 관련 Manual 테스트는 **SoftHSM 2.5.0만** 대상이다. 실물 HSM용 테스트 클래스는 아직 없다.
 
 테스트 blob은 `%TEMP%\kms-tpm-kek-*.blob` / `kms-tpm-kek-perf-*.blob`에 만들었다가 종료 시 삭제한다.
 
@@ -329,3 +418,4 @@ Key Vault HTTPS 왕복이 지배적이며, 리전·네트워크에 따라 변동
 | `AesGcmKekCipher` | ≈ 0.001ms | 기준 (최고) | 로컬 CPU, 동시 처리 가능 |
 | `AzureKeyVaultKekCipher` | ≈ 46ms | ≈ 1/46,000 | HTTPS + RSA, 네트워크 bound |
 | `TpmKekCipher` (Win TPM) | ≈ 31ms | ≈ 1/30,000 | TBS 직렬, 할당 큼 |
+| `Pkcs11KekCipher` (SoftHSM 2.5.0) | ≈ 2.4ms (CKM_RSA_PKCS) | — | `Pkcs11KekCipherSoftHsmPerformanceTests` (Manual). **에뮬레이터 수치이며 실물 HSM과 무관** |
