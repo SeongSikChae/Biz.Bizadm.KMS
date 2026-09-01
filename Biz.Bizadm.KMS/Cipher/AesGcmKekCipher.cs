@@ -7,6 +7,9 @@ namespace Biz.Bizadm.KMS.Cipher
     /// </summary>
     public sealed class AesGcmKekCipher : AbstractAesGcmCipher, IKekCipher
     {
+        /// <inheritdoc />
+        public string KeyId { get; }
+
         /// <summary>
         /// 자격 증명과 salt·반복 횟수로 KEK 암호를 생성한다.
         /// </summary>
@@ -27,9 +30,34 @@ namespace Biz.Bizadm.KMS.Cipher
             }
         }
 
-        private AesGcmKekCipher(byte[] password, byte[] salt, int iterationCount) : base(Rfc2898DeriveBytes.Pbkdf2(password, salt, iterationCount, HashAlgorithmName.SHA256, 32))
+        /// <summary>
+        /// 새 salt·자격 증명으로 로테이션된 KEK 인스턴스를 생성한다.
+        /// </summary>
+        /// <param name="newCredential">새 KEK 패스워드 제공자.</param>
+        /// <param name="newSalt">새 PBKDF2 salt.</param>
+        /// <param name="iterationCount">PBKDF2 반복 횟수.</param>
+        /// <returns>생성된 <see cref="AesGcmKekCipher"/>.</returns>
+        public static AesGcmKekCipher CreateRotated(
+            IKekCredentialProvider newCredential,
+            byte[] newSalt,
+            int iterationCount)
+            => Create(newCredential, newSalt, iterationCount);
+
+        private AesGcmKekCipher(byte[] password, byte[] salt, int iterationCount)
+            : base(DeriveKey(password, salt, iterationCount, out string keyId))
         {
+            KeyId = keyId;
         }
+
+        private static byte[] DeriveKey(byte[] password, byte[] salt, int iterationCount, out string keyId)
+        {
+            byte[] key = Rfc2898DeriveBytes.Pbkdf2(password, salt, iterationCount, HashAlgorithmName.SHA256, 32);
+            keyId = CreateKeyId(key);
+            return key;
+        }
+
+        private static string CreateKeyId(ReadOnlySpan<byte> keyMaterial)
+            => $"aesgcm:{Convert.ToHexString(SHA256.HashData(keyMaterial)).ToLowerInvariant()}";
 
         /// <inheritdoc />
         public override Task<byte[]> EncryptAsync(byte[] plain, CancellationToken cancellationToken = default)

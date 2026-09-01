@@ -8,20 +8,28 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
     /// </summary>
     public sealed class TpmKekCipher : IKekCipher
     {
+        private readonly Tpm2Device device;
+        private readonly IKekCredentialProvider credentialProvider;
         private readonly Tpm2 tpm;
 
         private TpmHandle? srkHandle;
         private TpmHandle? kekHandle;
         private bool disposedValue;
 
-        // private static readonly SchemeOaep OaepSha256 = new(TpmAlgId.Sha256);
         private const int AesBlockSize = 16;
 
-        private TpmKekCipher(Tpm2Device device, byte[] password, FileInfo kekBlobFile)
+        /// <inheritdoc />
+        public string KeyId { get; }
+
+        private TpmKekCipher(Tpm2Device device, IKekCredentialProvider credentialProvider, byte[] password, FileInfo kekBlobFile)
         {
             ArgumentNullException.ThrowIfNull(device);
+            ArgumentNullException.ThrowIfNull(credentialProvider);
             ArgumentNullException.ThrowIfNull(password);
             ArgumentNullException.ThrowIfNull(kekBlobFile);
+
+            this.device = device;
+            this.credentialProvider = credentialProvider;
 
             TpmPublic keySpec = ApplyPassword(CreateDefaultSrkKeySpec(), password);
             tpm = new Tpm2(device);
@@ -30,15 +38,34 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
             {
                 srkHandle = CreateSrk(tpm, keySpec);
                 kekBlobFile.Refresh();
-                kekHandle = kekBlobFile.Exists
-                    ? LoadKek(tpm, srkHandle, TpmKekBlob.Load(kekBlobFile))
-                    : CreateKek(tpm, srkHandle, kekBlobFile);
+                if (kekBlobFile.Exists)
+                {
+                    TpmKekBlob kekBlob = TpmKekBlob.Load(kekBlobFile);
+                    kekHandle = LoadKek(tpm, srkHandle, kekBlob);
+                    KeyId = CreateKeyId(kekBlob.Public);
+                }
+                else
+                {
+                    TpmPrivate kekPrivate = tpm.Create(
+                        srkHandle,
+                        new SensitiveCreate(null, null),
+                        CreateKekKeySpec(),
+                        null,
+                        [],
+                        out TpmPublic kekPublic,
+                        out _,
+                        out _,
+                        out _);
+
+                    new TpmKekBlob(kekPrivate, kekPublic).Save(kekBlobFile);
+                    kekHandle = tpm.Load(srkHandle, kekPrivate, kekPublic);
+                    KeyId = CreateKeyId(kekPublic);
+                }
             }
             catch
             {
                 Flush(kekHandle);
                 Flush(srkHandle);
-                tpm.Dispose();
                 throw;
             }
         }
@@ -61,7 +88,6 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
             ObjectDisposedException.ThrowIf(disposedValue, this);
             ArgumentNullException.ThrowIfNull(plain);
 
-            // return tpm.RsaEncrypt(Kek, plain, OaepSha256, null);
             byte[] iv = new byte[AesBlockSize];
             RandomNumberGenerator.Fill(iv);
             byte[] cipher = tpm.EncryptDecrypt(Kek, 0, TpmAlgId.Cfb, iv, plain, out _);
@@ -80,14 +106,31 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
             if (encrypted.Length < AesBlockSize)
                 throw new ArgumentException("Encrypted payload is shorter than the AES-CFB IV.", nameof(encrypted));
 
-            // return tpm.RsaDecrypt(Kek, encrypted, OaepSha256, null);
             byte[] iv = encrypted.AsSpan(0, AesBlockSize).ToArray();
             byte[] cipher = encrypted.AsSpan(AesBlockSize).ToArray();
             return tpm.EncryptDecrypt(Kek, 1, TpmAlgId.Cfb, iv, cipher, out _);
         }
 
+        /// <summary>
+        /// 동일 SRK 아래 새 KEK blob으로 로테이션된 <see cref="TpmKekCipher"/>를 생성한다.
+        /// </summary>
+        /// <param name="newKekBlobFile">새 KEK blob 저장 파일.</param>
+        /// <returns>새 <see cref="TpmKekCipher"/>.</returns>
+        public TpmKekCipher Rotate(FileInfo newKekBlobFile)
+        {
+            ObjectDisposedException.ThrowIf(disposedValue, this);
+            ArgumentNullException.ThrowIfNull(newKekBlobFile);
+            return Create(device, credentialProvider, newKekBlobFile);
+        }
+
         private TpmHandle Kek
             => kekHandle ?? throw new InvalidOperationException("KEK is not loaded.");
+
+        private static string CreateKeyId(TpmPublic publicKey)
+        {
+            byte[] publicBytes = Marshaller.GetTpmRepresentation(publicKey);
+            return $"tpm:{Convert.ToHexString(SHA256.HashData(publicBytes)).ToLowerInvariant()}";
+        }
 
         private void Flush(TpmHandle? handle)
         {
@@ -113,24 +156,17 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
                     kekHandle = null;
                     Flush(srkHandle);
                     srkHandle = null;
-                    tpm.Dispose();
+                    // Tpm2.Dispose()는 공유 Tpm2Device까지 Dispose하므로 호출하지 않는다.
+                    // TPM 핸들 flush만 수행하고 device 수명은 호출부가 관리한다.
                 }
 
                 disposedValue = true;
             }
         }
 
-        // // TODO: 비관리형 리소스를 해제하는 코드가 'Dispose(bool disposing)'에 포함된 경우에만 종료자를 재정의합니다.
-        // ~TpmKekCipher()
-        // {
-        //     // 이 코드를 변경하지 마세요. 'Dispose(bool disposing)' 메서드에 정리 코드를 입력합니다.
-        //     Dispose(disposing: false);
-        // }
-
         /// <inheritdoc />
         public void Dispose()
         {
-            // 이 코드를 변경하지 마세요. 'Dispose(bool disposing)' 메서드에 정리 코드를 입력합니다.
             Dispose(disposing: true);
             GC.SuppressFinalize(this);
         }
@@ -174,27 +210,6 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
                 TpmAlgId.Symcipher => new Tpm2bDigestSymcipher(seed),
                 _ => throw new NotSupportedException($"Password-derived SRK is not supported for {type}.")
             };
-        }
-
-        private static TpmHandle CreateKek(Tpm2 tpm, TpmHandle srk, FileInfo kekBlobFile)
-        {
-            ArgumentNullException.ThrowIfNull(tpm);
-            ArgumentNullException.ThrowIfNull(srk);
-            ArgumentNullException.ThrowIfNull(kekBlobFile);
-
-            TpmPrivate kekPrivate = tpm.Create(
-                srk,
-                new SensitiveCreate(null, null),
-                CreateKekKeySpec(),
-                null,
-                [],
-                out TpmPublic kekPublic,
-                out _,
-                out _,
-                out _);
-
-            new TpmKekBlob(kekPrivate, kekPublic).Save(kekBlobFile);
-            return tpm.Load(srk, kekPrivate, kekPublic);
         }
 
         private static TpmHandle LoadKek(Tpm2 tpm, TpmHandle srk, TpmKekBlob kekBlob)
@@ -244,7 +259,7 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
         /// <summary>
         /// TPM 디바이스와 자격 증명·KEK blob 파일로 <see cref="TpmKekCipher"/>를 생성한다.
         /// </summary>
-        /// <param name="device">연결된 TPM 디바이스.</param>
+        /// <param name="device">연결된 TPM 디바이스. 수명은 호출부가 관리하며, cipher Dispose 시 device는 닫히지 않는다.</param>
         /// <param name="credentialProvider">SRK 유도용 패스워드 제공자.</param>
         /// <param name="kekBlobFile">KEK blob 저장·로드 파일.</param>
         /// <returns>생성된 <see cref="TpmKekCipher"/>.</returns>
@@ -253,7 +268,7 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
             byte[] password = credentialProvider.GetPassword();
             try
             {
-                return new TpmKekCipher(device, password, kekBlobFile);
+                return new TpmKekCipher(device, credentialProvider, password, kekBlobFile);
             }
             finally
             {

@@ -1,5 +1,6 @@
 ﻿using Azure.Identity;
 using Biz.Bizadm.KMS.Cipher;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
 namespace Biz.Bizadm.KMSTest.Cipher
@@ -29,9 +30,17 @@ namespace Biz.Bizadm.KMSTest.Cipher
                 new Uri(Environment.GetEnvironmentVariable("AZURE_KEY_VAULT_URL") ?? string.Empty),
                 credential,
                 "TEST-KEY",
-                TestContext.CancellationToken);
+                cancellationToken: TestContext.CancellationToken);
 
-            using AesGcmDekCipher dekCipher = AesGcmDekCipher.Create(cipher, new FileInfo("dek"));
+            byte[] dek = RandomNumberGenerator.GetBytes(32);
+            byte[] wrapped = cipher.Encrypt(dek);
+            string oldKeyId = cipher.KeyId;
+
+            using AzureKeyVaultKekCipher rotated = await cipher.RotateAsync(TestContext.CancellationToken);
+            byte[] rewrapped = rotated.RewrapDek(cipher, wrapped);
+
+            Assert.AreNotEqual(oldKeyId, rotated.KeyId);
+            CollectionAssert.AreEqual(dek, rotated.Decrypt(rewrapped));
         }
     }
 }

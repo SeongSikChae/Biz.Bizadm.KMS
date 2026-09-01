@@ -157,6 +157,46 @@ namespace Biz.Bizadm.KMSTest.Cipher
         }
 
         [TestMethod]
+        public void CreateRotated_RewrapDek_PreservesPlaintext()
+        {
+            byte[] plain = CreatePlain(32);
+
+            using AesGcmKekCipher oldKek = CreateCipher();
+            byte[] wrapped = oldKek.Encrypt(plain);
+
+            using AesGcmKekCipher newKek = AesGcmKekCipher.CreateRotated(
+                new FixedPasswordCredentialProvider("rotated-password"u8.ToArray()),
+                [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116],
+                Iterations);
+
+            Assert.AreNotEqual(oldKek.KeyId, newKek.KeyId);
+
+            byte[] rewrapped = newKek.RewrapDek(oldKek, wrapped);
+            CollectionAssert.AreEqual(plain, newKek.Decrypt(rewrapped));
+        }
+
+        [TestMethod]
+        public void KeyId_IsStableForSameCredentials()
+        {
+            using AesGcmKekCipher first = CreateCipher();
+            using AesGcmKekCipher second = CreateCipher();
+
+            Assert.AreEqual(first.KeyId, second.KeyId);
+        }
+
+        [TestMethod]
+        public void KeyId_ChangesWhenPasswordChanges()
+        {
+            using AesGcmKekCipher first = CreateCipher();
+            using AesGcmKekCipher second = AesGcmKekCipher.Create(
+                new FixedPasswordCredentialProvider("other-password"u8.ToArray()),
+                Salt,
+                Iterations);
+
+            Assert.AreNotEqual(first.KeyId, second.KeyId);
+        }
+
+        [TestMethod]
         public void EncryptDecrypt_ConcurrentRoundtrip_Succeeds()
         {
             byte[] plain = CreatePlain(128);

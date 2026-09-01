@@ -1,3 +1,4 @@
+using Biz.Bizadm.KMS.Cipher;
 using Biz.Bizadm.KMS.Cipher.Tpm;
 using System.Security.Cryptography;
 using Tpm2Lib;
@@ -206,6 +207,61 @@ namespace Biz.Bizadm.KMSTest.Cipher.Tpm
             finally
             {
                 DeleteQuietly(kekFile);
+            }
+        }
+
+        [TestMethod]
+        [Timeout(120_000, CooperativeCancellation = true)]
+        public void Rotate_RewrapDek_PreservesPlaintext()
+        {
+            byte[] plain = CreatePlain(32);
+            FileInfo oldKekFile = NewKekFile();
+            FileInfo newKekFile = NewKekFile();
+            FileInfo dekFile = new(Path.Combine(Path.GetTempPath(), $"kms-tpm-dek-{Guid.NewGuid():N}.bin"));
+
+            try
+            {
+                using TpmKekCipher oldKek = CreateCipher(oldKekFile);
+                byte[] wrapped = oldKek.Encrypt(plain);
+
+                using TpmKekCipher newKek = oldKek.Rotate(newKekFile);
+                Assert.AreNotEqual(oldKek.KeyId, newKek.KeyId);
+
+                byte[] rewrapped = newKek.RewrapDek(oldKek, wrapped);
+                CollectionAssert.AreEqual(plain, newKek.Decrypt(rewrapped));
+            }
+            finally
+            {
+                DeleteQuietly(oldKekFile);
+                DeleteQuietly(newKekFile);
+                DeleteQuietly(dekFile);
+            }
+        }
+
+        [TestMethod]
+        [Timeout(120_000, CooperativeCancellation = true)]
+        public void Dispose_DoesNotCloseSharedDevice()
+        {
+            byte[] plain = CreatePlain(16);
+            FileInfo kekFile1 = NewKekFile();
+            FileInfo kekFile2 = NewKekFile();
+            Tpm2Device device = CreateConnectedDevice();
+
+            try
+            {
+                using (TpmKekCipher first = TpmKekCipher.Create(device, new FixedPasswordCredentialProvider(Password), kekFile1))
+                {
+                    byte[] encrypted = first.Encrypt(plain);
+                }
+
+                using TpmKekCipher second = TpmKekCipher.Create(device, new FixedPasswordCredentialProvider(Password), kekFile2);
+                CollectionAssert.AreEqual(plain, second.Decrypt(second.Encrypt(plain)));
+            }
+            finally
+            {
+                DeleteQuietly(kekFile1);
+                DeleteQuietly(kekFile2);
+                device.Close();
             }
         }
 

@@ -97,11 +97,67 @@ namespace Biz.Bizadm.KMSTest.Cipher
             byte[] plain = CreatePlain(48);
 
             using AesGcmDekCipher fileBacked = AesGcmDekCipher.Create(CreateKekCipher(), dekFile);
-            byte[] encryptedKey = File.ReadAllBytes(dekFile.FullName);
+            byte[] envelope = File.ReadAllBytes(dekFile.FullName);
             byte[] ciphertext = fileBacked.Encrypt(plain);
 
-            using AesGcmDekCipher fromBytes = AesGcmDekCipher.Create(CreateKekCipher(), encryptedKey);
+            using AesGcmDekCipher fromBytes = AesGcmDekCipher.Create(CreateKekCipher(), envelope);
             CollectionAssert.AreEqual(plain, fromBytes.Decrypt(ciphertext));
+        }
+
+        [TestMethod]
+        public void Create_EnvelopeContainsKeyId()
+        {
+            string directory = CreateTempDirectory();
+            FileInfo dekFile = new(Path.Combine(directory, "dek.bin"));
+
+            using AesGcmKekCipher kek = CreateKekCipher();
+            using AesGcmDekCipher _ = AesGcmDekCipher.Create(kek, dekFile);
+
+            WrappedDekEnvelope envelope = WrappedDekEnvelope.Deserialize(File.ReadAllBytes(dekFile.FullName));
+            Assert.AreEqual(kek.KeyId, envelope.KeyId);
+        }
+
+        [TestMethod]
+        public void Create_KeyIdMismatch_ThrowsInvalidDataException()
+        {
+            string directory = CreateTempDirectory();
+            FileInfo dekFile = new(Path.Combine(directory, "dek.bin"));
+
+            using (AesGcmDekCipher _ = AesGcmDekCipher.Create(CreateKekCipher(), dekFile))
+            {
+            }
+
+            using AesGcmKekCipher otherKek = AesGcmKekCipher.Create(
+                new FixedPasswordCredentialProvider("other-password"u8.ToArray()),
+                Salt,
+                Iterations);
+
+            Assert.ThrowsExactly<InvalidDataException>(() => AesGcmDekCipher.Create(otherKek, dekFile));
+        }
+
+        [TestMethod]
+        public void Rewrap_UpdatesEnvelopeAndPreservesDek()
+        {
+            string directory = CreateTempDirectory();
+            FileInfo dekFile = new(Path.Combine(directory, "dek.bin"));
+            byte[] plain = CreatePlain(64);
+
+            using AesGcmKekCipher oldKek = CreateKekCipher();
+            using AesGcmDekCipher dek = AesGcmDekCipher.Create(oldKek, dekFile);
+            byte[] ciphertext = dek.Encrypt(plain);
+
+            using AesGcmKekCipher newKek = AesGcmKekCipher.CreateRotated(
+                new FixedPasswordCredentialProvider("rotated-dek-password"u8.ToArray()),
+                [91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106],
+                Iterations);
+
+            AesGcmDekCipher.Rewrap(oldKek, newKek, dekFile);
+
+            WrappedDekEnvelope envelope = WrappedDekEnvelope.Deserialize(File.ReadAllBytes(dekFile.FullName));
+            Assert.AreEqual(newKek.KeyId, envelope.KeyId);
+
+            using AesGcmDekCipher reloaded = AesGcmDekCipher.Create(newKek, dekFile);
+            CollectionAssert.AreEqual(plain, reloaded.Decrypt(ciphertext));
         }
 
         private static string CreateTempDirectory()

@@ -2,6 +2,7 @@
 using Azure.Core;
 using Azure.Security.KeyVault.Keys;
 using Azure.Security.KeyVault.Keys.Cryptography;
+using System.Security.Cryptography;
 
 namespace Biz.Bizadm.KMS.Cipher
 {
@@ -10,45 +11,79 @@ namespace Biz.Bizadm.KMS.Cipher
     /// </summary>
     public sealed class AzureKeyVaultKekCipher : IKekCipher
     {
-        private readonly KeyClient client;
+        private readonly Uri uri;
         private readonly TokenCredential credential;
+        private readonly KeyClient client;
+        private readonly string keyName;
 
         private CryptographyClient? cryptographyClient;
+        private string? keyVersion;
 
-        /// <summary>
-        /// Key Vault URI와 자격 증명으로 인스턴스를 만든다. 사용 전 <see cref="InitializeAsync"/> 또는 <see cref="CreateAsync"/>가 필요하다.
-        /// </summary>
-        private AzureKeyVaultKekCipher(Uri uri, TokenCredential credential)
+        /// <inheritdoc />
+        public string KeyId => $"azurekv:{keyName}:{keyVersion}";
+
+        private AzureKeyVaultKekCipher(Uri uri, TokenCredential credential, string keyName)
         {
             ArgumentNullException.ThrowIfNull(uri);
             ArgumentNullException.ThrowIfNull(credential);
+            ArgumentException.ThrowIfNullOrWhiteSpace(keyName);
 
+            this.uri = uri;
             this.credential = credential;
+            this.keyName = keyName;
             client = new KeyClient(uri, credential);
         }
 
         /// <summary>
         /// Key Vault에서 키를 로드(없으면 생성)한 뒤 사용 가능한 암호를 반환한다.
         /// </summary>
+        /// <param name="uri">Key Vault URI.</param>
+        /// <param name="credential">Azure 자격 증명.</param>
+        /// <param name="name">키 이름.</param>
+        /// <param name="version">특정 키 버전. null이면 최신 버전.</param>
+        /// <param name="cancellationToken">작업 취소 토큰.</param>
+        /// <returns>생성된 <see cref="AzureKeyVaultKekCipher"/>.</returns>
         public static async Task<AzureKeyVaultKekCipher> CreateAsync(
             Uri uri,
             TokenCredential credential,
             string name,
+            string? version = null,
             CancellationToken cancellationToken = default)
         {
-            AzureKeyVaultKekCipher cipher = new(uri, credential);
-            await cipher.InitializeAsync(name, cancellationToken).ConfigureAwait(false);
+            AzureKeyVaultKekCipher cipher = new(uri, credential, name);
+            await cipher.InitializeAsync(name, version, cancellationToken).ConfigureAwait(false);
             return cipher;
+        }
+
+        /// <summary>
+        /// 동일 keyName으로 새 RSA 키 버전을 생성한 뒤 새 <see cref="AzureKeyVaultKekCipher"/>를 반환한다.
+        /// </summary>
+        /// <param name="cancellationToken">작업 취소 토큰.</param>
+        /// <returns>새 키 버전을 사용하는 <see cref="AzureKeyVaultKekCipher"/>.</returns>
+        public async Task<AzureKeyVaultKekCipher> RotateAsync(CancellationToken cancellationToken = default)
+        {
+            using RSA rsa = RSA.Create(4096);
+            JsonWebKey jwk = new(rsa, includePrivateParameters: true);
+            ImportKeyOptions options = new(keyName, jwk);
+            KeyVaultKey imported = await client.ImportKeyAsync(options, cancellationToken).ConfigureAwait(false);
+            AzureKeyVaultKekCipher rotated = new(uri, credential, keyName);
+            rotated.keyVersion = imported.Properties.Version;
+            rotated.cryptographyClient = new CryptographyClient(imported.Id, credential);
+            return rotated;
         }
 
         /// <summary>
         /// 지정한 이름의 RSA 키를 로드하거나, 없으면 Wrap/Unwrap 전용으로 생성한다.
         /// </summary>
-        private async Task InitializeAsync(string name, CancellationToken cancellationToken = default)
+        private async Task InitializeAsync(string name, string? version, CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
-            KeyVaultKey vaultKey = await GetOrCreateKeyAsync(name, cancellationToken).ConfigureAwait(false);
+            KeyVaultKey vaultKey = string.IsNullOrEmpty(version)
+                ? await GetOrCreateKeyAsync(name, cancellationToken).ConfigureAwait(false)
+                : (await client.GetKeyAsync(name, version, cancellationToken).ConfigureAwait(false)).Value;
+
+            keyVersion = vaultKey.Properties.Version;
             cryptographyClient = new CryptographyClient(vaultKey.Id, credential);
         }
 
@@ -78,7 +113,6 @@ namespace Biz.Bizadm.KMS.Cipher
                 }
                 catch (RequestFailedException createEx) when (createEx.Status == 409)
                 {
-                    // 다른 호출자가 생성했거나 soft-delete된 키가 남아 있는 경우.
                     try
                     {
                         Response<KeyVaultKey> response = await client
