@@ -44,16 +44,16 @@ public interface IDekCipher : ICipher { }
 
 KEK 버전 레지스트리와 DEK re-wrap 오케스트레이션을 담당한다. 호스트 앱은 개별 `IKekCipher`보다 Manager를 권장 진입점으로 사용한다.
 
-| Manager | Rotate API |
-|---|---|
-| `AesGcmKekManager` | `Rotate(IKekCredentialProvider, byte[] newSalt, int iterationCount)` |
-| `AzureKeyVaultKekManager` | `RotateAsync(CancellationToken)` |
-| `TpmKekManager` | `Rotate(FileInfo newKekBlobFile)` |
-| `Pkcs11KekManager` | `Rotate(string newKeyLabel)` |
+| Manager | Rotate API | LoadKey API |
+|---|---|---|
+| `AesGcmKekManager` | `Rotate(IKekCredentialProvider, byte[] newSalt, int iterationCount)` | `LoadKey(IKekCredentialProvider, byte[] salt, int iterationCount)` |
+| `AzureKeyVaultKekManager` | `RotateAsync(CancellationToken)` | `LoadKeyAsync(string version, CancellationToken)` |
+| `TpmKekManager` | `Rotate(FileInfo newKekBlobFile)` | `LoadKey(FileInfo kekBlobFile)` |
+| `Pkcs11KekManager` | `Rotate(string newKeyLabel)` | `LoadKey(string keyLabel)` |
 
 공통 API: `Current`, `Resolve(keyId)`, `RewrapDek(envelope)`, `RewrapDekFile(dekFile)`, `Release(keyId)`.
 
-로테이션 후 이전 KEK는 registry에 남아 아직 re-wrap되지 않은 DEK도 처리할 수 있다. 모든 DEK re-wrap이 끝나면 `Release(oldKeyId)`로 이전 KEK를 해제한다. `Current`는 `Release`할 수 없다.
+로테이션 후 이전 KEK는 registry에 남아 아직 re-wrap되지 않은 DEK도 처리할 수 있다. 프로세스 재시작 등으로 registry가 비어 있으면 `LoadKey`로 envelope에 기록된 old KEK를 다시 올린다. `LoadKey`는 **Current를 바꾸지 않고** registry에만 등록한다. 모든 DEK re-wrap이 끝나면 `Release(oldKeyId)`로 이전 KEK를 해제한다. `Current`는 `Release`할 수 없다.
 
 ```csharp
 using AesGcmKekManager manager = AesGcmKekManager.Create(credentialProvider, salt, iterations);
@@ -168,7 +168,7 @@ Azure Key Vault RSA 키로 DEK를 wrap/unwrap한다. `Azure.Security.KeyVault.Ke
 생성: `AzureKeyVaultKekCipher.CreateAsync(Uri vaultUri, TokenCredential credential, string keyName, string? version = null, CancellationToken)`.
 
 - `version`을 지정하면 해당 버전 로드(unwrap용). null이면 최신 버전(wrap용).
-- `RotateAsync()` — 동일 keyName으로 새 RSA 키 버전 import 후 새 인스턴스 반환
+- `RotateAsync()` — Key Vault에서 동일 keyName으로 새 RSA 키 버전(`CreateRsaKeyAsync`) 생성 후 새 인스턴스 반환
 - `KeyId`: `azurekv:{keyName}:{version}`
 
 - 지정한 이름의 RSA-4096 키를 로드하고, 없으면 WrapKey/UnwrapKey 전용으로 생성한다.
@@ -279,10 +279,12 @@ TPM 2.0에 KEK를 두고 암·복호화한다. TSS.Net (`Microsoft.TSS`) 사용.
 
 ### Wrap 모드 (`TpmKekOptions`)
 
+보안 우선(KEK wrap 무결성·변조 검출)이면 **`RsaOaep256`**을 권장한다. `Aes256Cfb`는 성능 우선 모드로 **인증 태그가 없으며** wrap된 DEK 변조를 검출하지 못한다(README AES-CFB 섹션 참고).
+
 | 모드 | KEK 타입 | wrap 알고리즘 | 출력 |
 |---|---|---|---|
 | `Aes256Cfb` (기본) | TPM AES-256 대칭키 | `EncryptDecrypt` AES-256-CFB | `iv(16) \|\| cipher` |
-| `RsaOaep256` | TPM RSA 비대칭키 (기본 2048비트) | `RsaEncrypt` / `RsaDecrypt` OAEP-SHA256 | `keySize/8` 바이트 |
+| `RsaOaep256` (보안 권장) | TPM RSA 비대칭키 (기본 2048비트) | `RsaEncrypt` / `RsaDecrypt` OAEP-SHA256 | `keySize/8` 바이트 |
 
 기존 blob을 로드할 때는 `TpmPublic.type`으로 모드를 자동 감지한다 (`Symcipher` → AES, `Rsa` → RSA-OAEP). AES blob과 RSA blob은 호환되지 않으므로 모드를 바꾸려면 새 blob을 만들어야 한다.
 
@@ -293,12 +295,14 @@ using TpmKekCipher kek = TpmKekCipher.Create(device, creds, kekBlobFile, rsaOpti
 
 ### 키 계층
 
-1. **SRK** — Owner 계층 `CreatePrimary`. RSA-2048 storage parent (restricted decrypt). `password`의 SHA-256을 unique에 넣어 동일 패스워드면 같은 SRK가 나온다.
-2. **KEK** — SRK 아래 대칭(AES-256-CFB) 또는 비대칭(RSA-OAEP) 키. 없으면 `TpmKekOptions.WrapMode`에 따라 생성 후 blob 저장, 있으면 blob에서 `Load`.
+1. **SRK** — Owner 계층 `CreatePrimary`. RSA-2048 storage parent (restricted decrypt). `password`의 SHA-256을 `unique`에 넣어 동일 패스워드면 같은 SRK가 나온다. SRK `authValue`는 `HMAC-SHA256(password, "Biz.Bizadm.KMS.Tpm.Srk")`로 유도한다.
+2. **KEK** — SRK 아래 대칭(AES-256-CFB) 또는 비대칭(RSA-OAEP) 키. `authValue`는 `HMAC-SHA256(password, "Biz.Bizadm.KMS.Tpm.Kek")`. blob이 없으면 `TpmKekOptions.WrapMode`에 따라 생성 후 저장, 있으면 blob에서 `Load`. Create·Load·Encrypt/Decrypt는 TSS.Net handle auth로 자동 인증한다.
+
+패스워드는 `Create` 시 1회만 `GetPassword()`로 받고 authValue 유도 후 즉시 `ZeroMemory`한다. 인스턴스 수명 동안 TPM handle auth가 유지되므로 매 연산마다 password를 다시 넣지 않는다.
 
 ### Blob (`TpmKekBlob`)
 
-파일 매직 `TKEK`, version `1`, TPM `TpmPublic` / `TpmPrivate` 직렬화. 개인키 물질은 SRK로 wrap된 채 디스크에 저장되고, 같은 SRK(같은 password)로만 Load된다.
+파일 매직 `TKEK`, version `1`, TPM `TpmPublic` / `TpmPrivate` 직렬화. 개인키 물질은 SRK로 wrap된 채 디스크에 저장되고, 올바른 password(SRK·KEK authValue + SRK unique)로만 Load된다.
 
 `FileInfo.Exists`는 캐시되므로 생성·로드 경로는 `Refresh()` 후 존재 여부를 본다.
 

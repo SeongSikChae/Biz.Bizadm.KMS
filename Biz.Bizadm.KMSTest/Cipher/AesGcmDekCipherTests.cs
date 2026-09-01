@@ -90,6 +90,44 @@ namespace Biz.Bizadm.KMSTest.Cipher
         }
 
         [TestMethod]
+        public void Create_ConcurrentFirstCreate_AllInstancesMatchOnDiskEnvelope()
+        {
+            string directory = CreateTempDirectory();
+            FileInfo dekFile = new(Path.Combine(directory, "dek.bin"));
+            byte[]? onDiskEnvelope = null;
+            Exception? failure = null;
+            int parallelism = Environment.ProcessorCount * 4;
+
+            Parallel.For(0, parallelism, new ParallelOptions { MaxDegreeOfParallelism = parallelism }, _ =>
+            {
+                try
+                {
+                    using AesGcmDekCipher dek = AesGcmDekCipher.Create(CreateKekCipher(), dekFile);
+                    byte[] envelope = File.ReadAllBytes(dekFile.FullName);
+                    Interlocked.CompareExchange(ref onDiskEnvelope, envelope, null);
+
+                    byte[] plain = CreatePlain(16);
+                    byte[] encrypted = dek.Encrypt(plain);
+                    CollectionAssert.AreEqual(plain, dek.Decrypt(encrypted));
+                }
+                catch (Exception ex)
+                {
+                    Interlocked.CompareExchange(ref failure, ex, null);
+                }
+            });
+
+            if (failure is not null)
+                throw failure;
+
+            Assert.IsNotNull(onDiskEnvelope);
+
+            using AesGcmDekCipher reloaded = AesGcmDekCipher.Create(CreateKekCipher(), dekFile);
+            byte[] plain = CreatePlain(32);
+            byte[] encrypted = reloaded.Encrypt(plain);
+            CollectionAssert.AreEqual(plain, reloaded.Decrypt(encrypted));
+        }
+
+        [TestMethod]
         public void Create_FromEncryptedKey_MatchesFileBackedInstance()
         {
             string directory = CreateTempDirectory();

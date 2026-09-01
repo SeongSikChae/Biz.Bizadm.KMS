@@ -7,8 +7,20 @@ namespace Biz.Bizadm.KMS.Cipher
     /// </summary>
     public sealed class AzureKeyVaultKekManager : KekManagerBase
     {
-        private AzureKeyVaultKekManager(AzureKeyVaultKekCipher initial) : base(initial)
+        private readonly Uri vaultUri;
+        private readonly TokenCredential credential;
+        private readonly string keyName;
+
+        private AzureKeyVaultKekManager(
+            Uri vaultUri,
+            TokenCredential credential,
+            string keyName,
+            AzureKeyVaultKekCipher initial)
+            : base(initial)
         {
+            this.vaultUri = vaultUri;
+            this.credential = credential;
+            this.keyName = keyName;
         }
 
         /// <summary>
@@ -30,7 +42,7 @@ namespace Biz.Bizadm.KMS.Cipher
             AzureKeyVaultKekCipher cipher = await AzureKeyVaultKekCipher
                 .CreateAsync(uri, credential, name, version, cancellationToken)
                 .ConfigureAwait(false);
-            return new AzureKeyVaultKekManager(cipher);
+            return new AzureKeyVaultKekManager(uri, credential, name, cipher);
         }
 
         /// <summary>
@@ -44,6 +56,25 @@ namespace Biz.Bizadm.KMS.Cipher
             AzureKeyVaultKekCipher rotated = await current.RotateAsync(cancellationToken).ConfigureAwait(false);
             SetCurrent(rotated);
             return rotated;
+        }
+
+        /// <summary>
+        /// Key Vault에서 지정 버전의 기존 KEK를 로드하여 registry에 등록한다. <see cref="IKekManager.Current"/>는 바꾸지 않는다.
+        /// </summary>
+        /// <param name="version">로드할 키 버전.</param>
+        /// <param name="cancellationToken">작업 취소 토큰.</param>
+        /// <returns>등록된 KEK.</returns>
+        public async Task<AzureKeyVaultKekCipher> LoadKeyAsync(
+            string version,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(version);
+
+            AzureKeyVaultKekCipher cipher = await AzureKeyVaultKekCipher
+                .CreateAsync(vaultUri, credential, keyName, version, cancellationToken)
+                .ConfigureAwait(false);
+            Register(cipher);
+            return cipher;
         }
     }
 }

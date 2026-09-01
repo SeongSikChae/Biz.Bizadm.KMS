@@ -35,5 +35,19 @@ namespace Biz.Bizadm.KMS.Cipher
             SetCurrent(rotated);
             return rotated;
         }
+
+        /// <summary>
+        /// 저장된 salt·자격 증명으로 기존 KEK를 로드하여 registry에 등록한다. <see cref="IKekManager.Current"/>는 바꾸지 않는다.
+        /// </summary>
+        /// <param name="credentialProvider">KEK 패스워드 제공자.</param>
+        /// <param name="salt">PBKDF2 salt.</param>
+        /// <param name="iterationCount">PBKDF2 반복 횟수.</param>
+        /// <returns>등록된 KEK.</returns>
+        public AesGcmKekCipher LoadKey(IKekCredentialProvider credentialProvider, byte[] salt, int iterationCount)
+        {
+            AesGcmKekCipher cipher = AesGcmKekCipher.Create(credentialProvider, salt, iterationCount);
+            Register(cipher);
+            return cipher;
+        }
     }
 }

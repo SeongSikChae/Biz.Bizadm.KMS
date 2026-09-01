@@ -105,6 +105,130 @@ namespace Biz.Bizadm.KMSTest.Cipher
             Assert.ThrowsExactly<InvalidOperationException>(() => manager.Release(manager.Current.KeyId));
         }
 
+        [TestMethod]
+        public void LoadKey_RegistersOldKekWithoutChangingCurrent()
+        {
+            using AesGcmKekManager manager = AesGcmKekManager.Create(
+                new FixedPasswordCredentialProvider(Password),
+                Salt,
+                Iterations);
+            string currentKeyId = manager.Current.KeyId;
+
+            AesGcmKekCipher loaded = manager.LoadKey(
+                new FixedPasswordCredentialProvider("rotated-password"u8.ToArray()),
+                NewSalt,
+                Iterations);
+
+            Assert.AreEqual(currentKeyId, manager.Current.KeyId);
+            Assert.AreNotEqual(currentKeyId, loaded.KeyId);
+            Assert.IsTrue(manager.KnownKeyIds.Contains(loaded.KeyId));
+            Assert.IsNotNull(manager.Resolve(loaded.KeyId));
+        }
+
+        [TestMethod]
+        public void LoadKey_AfterColdStart_RewrapsDekWithOldEnvelope()
+        {
+            string directory = CreateTempDirectory();
+            FileInfo dekFile = new(Path.Combine(directory, "dek.bin"));
+            byte[] plain = CreatePlain(48);
+            byte[] envelope;
+
+            using (AesGcmKekManager oldManager = AesGcmKekManager.Create(
+                       new FixedPasswordCredentialProvider(Password),
+                       Salt,
+                       Iterations))
+            {
+                using AesGcmDekCipher dek = AesGcmDekCipher.Create(oldManager.Current, dekFile);
+                envelope = File.ReadAllBytes(dekFile.FullName);
+                CollectionAssert.AreEqual(plain, dek.Decrypt(dek.Encrypt(plain)));
+            }
+
+            using AesGcmKekManager manager = AesGcmKekManager.Create(
+                new FixedPasswordCredentialProvider("rotated-password"u8.ToArray()),
+                NewSalt,
+                Iterations);
+
+            Assert.ThrowsExactly<KeyNotFoundException>(() =>
+                manager.RewrapDek(WrappedDekEnvelope.Deserialize(envelope).Serialize()));
+
+            manager.LoadKey(new FixedPasswordCredentialProvider(Password), Salt, Iterations);
+            manager.RewrapDekFile(dekFile);
+
+            WrappedDekEnvelope updated = WrappedDekEnvelope.Deserialize(File.ReadAllBytes(dekFile.FullName));
+            Assert.AreEqual(manager.Current.KeyId, updated.KeyId);
+
+            using AesGcmDekCipher reloaded = AesGcmDekCipher.Create(manager.Current, dekFile);
+            CollectionAssert.AreEqual(plain, reloaded.Decrypt(reloaded.Encrypt(plain)));
+        }
+
+        [TestMethod]
+        public void LoadKey_DuplicateKeyId_ThrowsInvalidOperationException()
+        {
+            using AesGcmKekManager manager = AesGcmKekManager.Create(
+                new FixedPasswordCredentialProvider(Password),
+                Salt,
+                Iterations);
+
+            Assert.ThrowsExactly<InvalidOperationException>(() =>
+                manager.LoadKey(new FixedPasswordCredentialProvider(Password), Salt, Iterations));
+        }
+
+        [TestMethod]
+        public void ConcurrentRotateAndRewrapDekFile_DoesNotCorruptRegistry()
+        {
+            string directory = CreateTempDirectory();
+            FileInfo dekFile = new(Path.Combine(directory, "dek.bin"));
+            byte[] plain = CreatePlain(64);
+            Exception? failure = null;
+
+            using AesGcmKekManager manager = AesGcmKekManager.Create(
+                new FixedPasswordCredentialProvider(Password),
+                Salt,
+                Iterations);
+
+            using (AesGcmDekCipher dek = AesGcmDekCipher.Create(manager.Current, dekFile))
+            {
+                byte[] ciphertext = dek.Encrypt(plain);
+                string initialKeyId = manager.Current.KeyId;
+
+                Parallel.Invoke(
+                    () =>
+                    {
+                        try
+                        {
+                            manager.Rotate(
+                                new FixedPasswordCredentialProvider("rotated-password"u8.ToArray()),
+                                NewSalt,
+                                Iterations);
+                        }
+                        catch (Exception ex)
+                        {
+                            Interlocked.CompareExchange(ref failure, ex, null);
+                        }
+                    },
+                    () =>
+                    {
+                        try
+                        {
+                            manager.RewrapDekFile(dekFile);
+                        }
+                        catch (Exception ex)
+                        {
+                            Interlocked.CompareExchange(ref failure, ex, null);
+                        }
+                    });
+
+                if (failure is not null)
+                    throw failure;
+
+                Assert.IsTrue(manager.KnownKeyIds.Contains(initialKeyId));
+                Assert.IsNotNull(manager.Resolve(initialKeyId));
+
+                using AesGcmDekCipher reloaded = AesGcmDekCipher.Create(manager.Current, dekFile);
+                CollectionAssert.AreEqual(plain, reloaded.Decrypt(ciphertext));
+            }
+        }
+
         private static string CreateTempDirectory()
         {
             string path = Path.Combine(Path.GetTempPath(), "Biz.Bizadm.KMSTest", Guid.NewGuid().ToString("N"));

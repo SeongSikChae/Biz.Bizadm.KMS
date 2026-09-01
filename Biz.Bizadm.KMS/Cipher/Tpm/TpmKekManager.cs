@@ -49,5 +49,24 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
             SetCurrent(rotated);
             return rotated;
         }
+
+        /// <summary>
+        /// 기존 KEK blob 파일을 로드하여 registry에 등록한다. <see cref="IKekManager.Current"/>는 바꾸지 않는다.
+        /// </summary>
+        /// <param name="kekBlobFile">기존 KEK blob 파일.</param>
+        /// <param name="options">wrap 모드·RSA 키 옵션.</param>
+        /// <returns>등록된 KEK.</returns>
+        /// <exception cref="FileNotFoundException">blob 파일이 없는 경우.</exception>
+        public TpmKekCipher LoadKey(FileInfo kekBlobFile, TpmKekOptions? options = null)
+        {
+            ArgumentNullException.ThrowIfNull(kekBlobFile);
+            kekBlobFile.Refresh();
+            if (!kekBlobFile.Exists)
+                throw new FileNotFoundException("KEK blob file was not found.", kekBlobFile.FullName);
+
+            TpmKekCipher cipher = TpmKekCipher.Create(device, credentialProvider, kekBlobFile, options);
+            Register(cipher);
+            return cipher;
+        }
     }
 }

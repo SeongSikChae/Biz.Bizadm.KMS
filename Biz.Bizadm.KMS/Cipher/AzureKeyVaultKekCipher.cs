@@ -2,7 +2,6 @@
 using Azure.Core;
 using Azure.Security.KeyVault.Keys;
 using Azure.Security.KeyVault.Keys.Cryptography;
-using System.Security.Cryptography;
 
 namespace Biz.Bizadm.KMS.Cipher
 {
@@ -62,13 +61,19 @@ namespace Biz.Bizadm.KMS.Cipher
         /// <returns>새 키 버전을 사용하는 <see cref="AzureKeyVaultKekCipher"/>.</returns>
         public async Task<AzureKeyVaultKekCipher> RotateAsync(CancellationToken cancellationToken = default)
         {
-            using RSA rsa = RSA.Create(4096);
-            JsonWebKey jwk = new(rsa, includePrivateParameters: true);
-            ImportKeyOptions options = new(keyName, jwk);
-            KeyVaultKey imported = await client.ImportKeyAsync(options, cancellationToken).ConfigureAwait(false);
+            CreateRsaKeyOptions options = new(keyName)
+            {
+                KeySize = 4096,
+                Enabled = true
+            };
+
+            options.KeyOperations.Add(KeyOperation.WrapKey);
+            options.KeyOperations.Add(KeyOperation.UnwrapKey);
+
+            KeyVaultKey vaultKey = await client.CreateRsaKeyAsync(options, cancellationToken).ConfigureAwait(false);
             AzureKeyVaultKekCipher rotated = new(uri, credential, keyName);
-            rotated.keyVersion = imported.Properties.Version;
-            rotated.cryptographyClient = new CryptographyClient(imported.Id, credential);
+            rotated.keyVersion = vaultKey.Properties.Version;
+            rotated.cryptographyClient = new CryptographyClient(vaultKey.Id, credential);
             return rotated;
         }
 

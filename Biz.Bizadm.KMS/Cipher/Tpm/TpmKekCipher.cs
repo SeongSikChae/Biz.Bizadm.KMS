@@ -45,46 +45,57 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
             this.credentialProvider = credentialProvider;
             this.options = options;
 
-            TpmPublic keySpec = ApplyPassword(CreateDefaultSrkKeySpec(), password);
-            tpm = new Tpm2(device);
-
+            byte[] srkAuth = TpmKekAuth.DeriveSrkAuth(password);
+            byte[] kekAuth = TpmKekAuth.DeriveKekAuth(password);
             try
             {
-                srkHandle = CreateSrk(tpm, keySpec);
-                kekBlobFile.Refresh();
-                if (kekBlobFile.Exists)
-                {
-                    TpmKekBlob kekBlob = TpmKekBlob.Load(kekBlobFile);
-                    wrapMode = InferWrapMode(kekBlob.Public);
-                    rsaKeySize = GetRsaKeySize(kekBlob.Public, options.RsaKeySize);
-                    kekHandle = LoadKek(tpm, srkHandle, kekBlob);
-                    KeyId = CreateKeyId(kekBlob.Public);
-                }
-                else
-                {
-                    wrapMode = options.WrapMode;
-                    rsaKeySize = options.RsaKeySize;
-                    TpmPrivate kekPrivate = tpm.Create(
-                        srkHandle,
-                        new SensitiveCreate(null, null),
-                        CreateKekKeySpec(options),
-                        null,
-                        [],
-                        out TpmPublic kekPublic,
-                        out _,
-                        out _,
-                        out _);
+                TpmPublic keySpec = ApplyPassword(CreateDefaultSrkKeySpec(), password);
+                tpm = new Tpm2(device);
 
-                    new TpmKekBlob(kekPrivate, kekPublic).Save(kekBlobFile);
-                    kekHandle = tpm.Load(srkHandle, kekPrivate, kekPublic);
-                    KeyId = CreateKeyId(kekPublic);
+                try
+                {
+                    srkHandle = CreateSrk(tpm, keySpec, srkAuth);
+                    kekBlobFile.Refresh();
+                    if (kekBlobFile.Exists)
+                    {
+                        TpmKekBlob kekBlob = TpmKekBlob.Load(kekBlobFile);
+                        wrapMode = InferWrapMode(kekBlob.Public);
+                        rsaKeySize = GetRsaKeySize(kekBlob.Public, options.RsaKeySize);
+                        kekHandle = LoadKek(tpm, srkHandle, kekBlob, kekAuth);
+                        KeyId = CreateKeyId(kekBlob.Public);
+                    }
+                    else
+                    {
+                        wrapMode = options.WrapMode;
+                        rsaKeySize = options.RsaKeySize;
+                        TpmPrivate kekPrivate = tpm.Create(
+                            srkHandle,
+                            new SensitiveCreate(kekAuth, null),
+                            CreateKekKeySpec(options),
+                            null,
+                            [],
+                            out TpmPublic kekPublic,
+                            out _,
+                            out _,
+                            out _);
+
+                        new TpmKekBlob(kekPrivate, kekPublic).Save(kekBlobFile);
+                        kekHandle = tpm.Load(srkHandle, kekPrivate, kekPublic);
+                        ApplyHandleAuth(kekHandle, kekAuth);
+                        KeyId = CreateKeyId(kekPublic);
+                    }
+                }
+                catch
+                {
+                    Flush(kekHandle);
+                    Flush(srkHandle);
+                    throw;
                 }
             }
-            catch
+            finally
             {
-                Flush(kekHandle);
-                Flush(srkHandle);
-                throw;
+                CryptographicOperations.ZeroMemory(srkAuth);
+                CryptographicOperations.ZeroMemory(kekAuth);
             }
         }
 
@@ -220,6 +231,11 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
             return $"tpm:{Convert.ToHexString(SHA256.HashData(publicBytes)).ToLowerInvariant()}";
         }
 
+        private static void ApplyHandleAuth(TpmHandle handle, byte[] auth)
+        {
+            handle.Auth = new AuthValue(auth);
+        }
+
         private void Flush(TpmHandle? handle)
         {
             if (handle is null)
@@ -300,12 +316,16 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
             };
         }
 
-        private static TpmHandle LoadKek(Tpm2 tpm, TpmHandle srk, TpmKekBlob kekBlob)
+        private static TpmHandle LoadKek(Tpm2 tpm, TpmHandle srk, TpmKekBlob kekBlob, byte[] kekAuth)
         {
             ArgumentNullException.ThrowIfNull(tpm);
             ArgumentNullException.ThrowIfNull(srk);
             ArgumentNullException.ThrowIfNull(kekBlob);
-            return LoadKek(tpm, srk, kekBlob.Private, kekBlob.Public);
+            ArgumentNullException.ThrowIfNull(kekAuth);
+
+            TpmHandle handle = LoadKek(tpm, srk, kekBlob.Private, kekBlob.Public);
+            ApplyHandleAuth(handle, kekAuth);
+            return handle;
         }
 
         private static TpmHandle LoadKek(Tpm2 tpm, TpmHandle srk, TpmPrivate kekPrivate, TpmPublic kekPublic)
@@ -318,11 +338,11 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
             return tpm.Load(srk, kekPrivate, kekPublic);
         }
 
-        private static TpmHandle CreateSrk(Tpm2 tpm, TpmPublic keySpec)
+        private static TpmHandle CreateSrk(Tpm2 tpm, TpmPublic keySpec, byte[] srkAuth)
         {
-            return tpm.CreatePrimary(
+            TpmHandle handle = tpm.CreatePrimary(
                 TpmRh.Owner,
-                new SensitiveCreate(null, null),
+                new SensitiveCreate(srkAuth, null),
                 keySpec,
                 null,
                 [],
@@ -330,6 +350,9 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
                 out _,
                 out _,
                 out _);
+
+            ApplyHandleAuth(handle, srkAuth);
+            return handle;
         }
 
         private static TpmPublic CreateKekKeySpec(TpmKekOptions options)
@@ -364,7 +387,7 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
         /// TPM 디바이스와 자격 증명·KEK blob 파일로 <see cref="TpmKekCipher"/>를 생성한다.
         /// </summary>
         /// <param name="device">연결된 TPM 디바이스. 수명은 호출부가 관리하며, cipher Dispose 시 device는 닫히지 않는다.</param>
-        /// <param name="credentialProvider">SRK 유도용 패스워드 제공자.</param>
+        /// <param name="credentialProvider">SRK·KEK authValue 유도용 패스워드 제공자. Create 시 1회만 사용한다.</param>
         /// <param name="kekBlobFile">KEK blob 저장·로드 파일.</param>
         /// <param name="options">wrap 모드·RSA 키 옵션.</param>
         /// <returns>생성된 <see cref="TpmKekCipher"/>.</returns>

@@ -32,10 +32,10 @@ namespace Biz.Bizadm.KMS.Cipher
                 f.Directory?.Create();
                 try
                 {
-                    WriteAllBytesAtomic(f.FullName, envelope);
+                    WriteAllBytesExclusiveCreate(f.FullName, envelope);
                     return new AesGcmDekCipher(key);
                 }
-                catch (IOException) when (File.Exists(f.FullName))
+                catch (IOException)
                 {
                     CryptographicOperations.ZeroMemory(key);
                     return Create(cipher, File.ReadAllBytes(f.FullName));
@@ -162,6 +162,16 @@ namespace Biz.Bizadm.KMS.Cipher
                 throw new InvalidDataException(
                     $"Envelope KeyId '{storedKeyId}' does not match cipher KeyId '{cipher.KeyId}'.");
             }
+        }
+
+        internal static void WriteAllBytesExclusiveCreate(string path, byte[] data)
+        {
+            string? directory = Path.GetDirectoryName(path);
+            if (string.IsNullOrEmpty(directory))
+                throw new ArgumentException("Path must include a directory.", nameof(path));
+
+            using FileStream stream = new(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            stream.Write(data);
         }
 
         internal static void WriteAllBytesAtomic(string path, byte[] data)

@@ -48,6 +48,20 @@ namespace Biz.Bizadm.KMS.Pkcs11.Cipher
             return rotated;
         }
 
+        /// <summary>
+        /// HSM에서 기존 KEK를 라벨로 로드하여 registry에 등록한다. <see cref="IKekManager.Current"/>는 바꾸지 않는다.
+        /// </summary>
+        /// <param name="keyLabel">HSM KEK 라벨.</param>
+        /// <param name="options">wrap 메커니즘·RSA 키 옵션.</param>
+        /// <returns>등록된 KEK.</returns>
+        public Pkcs11KekCipher LoadKey(string keyLabel, Pkcs11KekOptions? options = null)
+        {
+            ObjectDisposedException.ThrowIf(disposedValue, this);
+            Pkcs11KekCipher cipher = Pkcs11KekCipher.Create(context, keyLabel, createIfMissing: false, options);
+            Register(cipher);
+            return cipher;
+        }
+
         /// <inheritdoc />
         public new void Dispose()
         {

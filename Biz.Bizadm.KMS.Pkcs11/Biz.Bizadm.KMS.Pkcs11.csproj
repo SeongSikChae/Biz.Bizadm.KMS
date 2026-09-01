@@ -12,7 +12,7 @@
 		<EmbedUntrackedSources>true</EmbedUntrackedSources>
 		<IncludeSymbols>true</IncludeSymbols>
 		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
-		<Version>1.0.0</Version>
+		<Version>1.0.1</Version>
 		<Authors>SeongSikChae</Authors>
 		<Description>PKCS#11 HSM IKekCipher backend for Biz.Bizadm.KMS.</Description>
 		<PackageLicenseFile>LICENSE</PackageLicenseFile>
