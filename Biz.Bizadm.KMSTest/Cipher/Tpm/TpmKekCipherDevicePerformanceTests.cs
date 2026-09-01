@@ -153,8 +153,14 @@ namespace Biz.Bizadm.KMSTest.Cipher.Tpm
             }
         }
 
+        protected virtual TpmKekOptions Options => new();
+
         protected TpmKekCipher CreateCipher(FileInfo kekBlobFile)
-            => TpmKekCipher.Create(CreateConnectedDevice(), new FixedPasswordCredentialProvider(Password), kekBlobFile);
+            => TpmKekCipher.Create(
+                CreateConnectedDevice(),
+                new FixedPasswordCredentialProvider(Password),
+                kekBlobFile,
+                Options);
 
         protected static byte[] CreatePlain()
         {
@@ -205,9 +211,35 @@ namespace Biz.Bizadm.KMSTest.Cipher.Tpm
     [TestCategory("Manual")]
     [DoNotParallelize]
     [OSCondition(OperatingSystems.Windows)]
-    public sealed class TpmKekCipherTbsDevicePerformanceTests : TpmKekCipherDevicePerformanceTests
+    public sealed class TpmKekCipherAesTbsDevicePerformanceTests : TpmKekCipherDevicePerformanceTests
     {
         // 실물 TPM RSA-2048은 소프트웨어 TPM보다 한 자릿수 이상 느리다.
+        protected override int MemoryWarmup => 5;
+        protected override int MemoryBatch => 20;
+        protected override int GcWarmup => 5;
+        protected override int GcMeasured => 30;
+        protected override int LatencyWarmup => 3;
+        protected override int LatencyOperations => 20;
+        protected override double MaxP50Ms => 2_000;
+        protected override double MaxP95Ms => 4_000;
+        protected override double MaxP99Ms => 8_000;
+
+        protected override Tpm2Device CreateConnectedDevice()
+        {
+            TbsDevice device = new();
+            device.Connect();
+            return device;
+        }
+    }
+
+    [TestClass]
+    [TestCategory("Manual")]
+    [DoNotParallelize]
+    [OSCondition(OperatingSystems.Windows)]
+    public sealed class TpmKekCipherRsaOaepTbsDevicePerformanceTests : TpmKekCipherDevicePerformanceTests
+    {
+        protected override TpmKekOptions Options => new() { WrapMode = TpmKekWrapMode.RsaOaep256 };
+
         protected override int MemoryWarmup => 5;
         protected override int MemoryBatch => 20;
         protected override int GcWarmup => 5;

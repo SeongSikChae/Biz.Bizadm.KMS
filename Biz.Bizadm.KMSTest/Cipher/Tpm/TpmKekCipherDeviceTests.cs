@@ -7,23 +7,17 @@ namespace Biz.Bizadm.KMSTest.Cipher.Tpm
 {
     public abstract class TpmKekCipherDeviceTests
     {
-        private const int AesBlockSize = 16;
-
         protected static readonly byte[] Password = "kms-tpm-test-password"u8.ToArray();
 
         protected abstract Tpm2Device CreateConnectedDevice();
 
+        protected virtual TpmKekOptions Options => new();
+
         [TestMethod]
         [Timeout(120_000, CooperativeCancellation = true)]
-        [DataRow(0)]
-        [DataRow(1)]
-        [DataRow(16)]
-        [DataRow(32)]
-        [DataRow(64)]
-        [DataRow(256)]
-        public void EncryptDecrypt_Roundtrip_ReturnsOriginalPlaintext(int length)
+        public void EncryptDecrypt_Roundtrip_ReturnsOriginalPlaintext()
         {
-            byte[] plain = CreatePlain(length);
+            byte[] plain = CreatePlain(32);
             FileInfo kekFile = NewKekFile();
 
             try
@@ -67,7 +61,7 @@ namespace Biz.Bizadm.KMSTest.Cipher.Tpm
         [Timeout(180_000, CooperativeCancellation = true)]
         public void Decrypt_WithNewInstanceSameCredentials_Succeeds()
         {
-            byte[] plain = CreatePlain(64);
+            byte[] plain = CreatePlain(32);
             FileInfo kekFile = NewKekFile();
 
             try
@@ -102,7 +96,204 @@ namespace Biz.Bizadm.KMSTest.Cipher.Tpm
                     cipher.Encrypt(CreatePlain(16));
 
                 Assert.Throws<TpmException>(() =>
-                    TpmKekCipher.Create(CreateConnectedDevice(), new FixedPasswordCredentialProvider("other-password"u8.ToArray()), kekFile));
+                    TpmKekCipher.Create(
+                        CreateConnectedDevice(),
+                        new FixedPasswordCredentialProvider("other-password"u8.ToArray()),
+                        kekFile,
+                        Options));
+            }
+            finally
+            {
+                DeleteQuietly(kekFile);
+            }
+        }
+
+        [TestMethod]
+        [Timeout(120_000, CooperativeCancellation = true)]
+        public void Encrypt_AfterDispose_ThrowsObjectDisposedException()
+        {
+            FileInfo kekFile = NewKekFile();
+
+            try
+            {
+                TpmKekCipher cipher = CreateCipher(kekFile);
+                cipher.Dispose();
+
+                Assert.ThrowsExactly<ObjectDisposedException>(() => cipher.Encrypt(CreatePlain(8)));
+            }
+            finally
+            {
+                DeleteQuietly(kekFile);
+            }
+        }
+
+        [TestMethod]
+        [Timeout(120_000, CooperativeCancellation = true)]
+        public void Decrypt_AfterDispose_ThrowsObjectDisposedException()
+        {
+            FileInfo kekFile = NewKekFile();
+
+            try
+            {
+                TpmKekCipher cipher = CreateCipher(kekFile);
+                byte[] encrypted = cipher.Encrypt(CreatePlain(8));
+                cipher.Dispose();
+
+                Assert.ThrowsExactly<ObjectDisposedException>(() => cipher.Decrypt(encrypted));
+            }
+            finally
+            {
+                DeleteQuietly(kekFile);
+            }
+        }
+
+        [TestMethod]
+        [Timeout(120_000, CooperativeCancellation = true)]
+        public void Rotate_RewrapDek_PreservesPlaintext()
+        {
+            byte[] plain = CreatePlain(32);
+            FileInfo oldKekFile = NewKekFile();
+            FileInfo newKekFile = NewKekFile();
+
+            try
+            {
+                using TpmKekCipher oldKek = CreateCipher(oldKekFile);
+                byte[] wrapped = oldKek.Encrypt(plain);
+
+                using TpmKekCipher newKek = oldKek.Rotate(newKekFile);
+                Assert.AreNotEqual(oldKek.KeyId, newKek.KeyId);
+
+                byte[] rewrapped = newKek.RewrapDek(oldKek, wrapped);
+                CollectionAssert.AreEqual(plain, newKek.Decrypt(rewrapped));
+            }
+            finally
+            {
+                DeleteQuietly(oldKekFile);
+                DeleteQuietly(newKekFile);
+            }
+        }
+
+        [TestMethod]
+        [Timeout(120_000, CooperativeCancellation = true)]
+        public void Dispose_DoesNotCloseSharedDevice()
+        {
+            byte[] plain = CreatePlain(16);
+            FileInfo kekFile1 = NewKekFile();
+            FileInfo kekFile2 = NewKekFile();
+            Tpm2Device device = CreateConnectedDevice();
+
+            try
+            {
+                using (TpmKekCipher first = TpmKekCipher.Create(
+                    device,
+                    new FixedPasswordCredentialProvider(Password),
+                    kekFile1,
+                    Options))
+                {
+                    first.Encrypt(plain);
+                }
+
+                using TpmKekCipher second = TpmKekCipher.Create(
+                    device,
+                    new FixedPasswordCredentialProvider(Password),
+                    kekFile2,
+                    Options);
+                CollectionAssert.AreEqual(plain, second.Decrypt(second.Encrypt(plain)));
+            }
+            finally
+            {
+                DeleteQuietly(kekFile1);
+                DeleteQuietly(kekFile2);
+                device.Close();
+            }
+        }
+
+        [TestMethod]
+        [Timeout(120_000, CooperativeCancellation = true)]
+        public void Dispose_CalledTwice_DoesNotThrow()
+        {
+            FileInfo kekFile = NewKekFile();
+
+            try
+            {
+                TpmKekCipher cipher = CreateCipher(kekFile);
+                cipher.Dispose();
+                cipher.Dispose();
+            }
+            finally
+            {
+                DeleteQuietly(kekFile);
+            }
+        }
+
+        protected TpmKekCipher CreateCipher(FileInfo kekBlobFile)
+            => TpmKekCipher.Create(
+                CreateConnectedDevice(),
+                new FixedPasswordCredentialProvider(Password),
+                kekBlobFile,
+                Options);
+
+        protected static FileInfo NewKekFile()
+            => new(Path.Combine(Path.GetTempPath(), $"kms-tpm-kek-{Guid.NewGuid():N}.blob"));
+
+        protected static void DeleteQuietly(FileInfo file)
+        {
+            try
+            {
+                file.Refresh();
+                if (file.Exists)
+                    file.Delete();
+            }
+            catch (IOException)
+            {
+            }
+        }
+
+        protected static byte[] CreatePlain(int length)
+        {
+            byte[] plain = new byte[length];
+            if (length > 0)
+                RandomNumberGenerator.Fill(plain);
+            return plain;
+        }
+    }
+
+    [TestClass]
+    [TestCategory("Manual")]
+    [DoNotParallelize]
+    [OSCondition(OperatingSystems.Windows)]
+    public sealed class TpmKekCipherAesTbsDeviceTests : TpmKekCipherDeviceTests
+    {
+        private const int AesBlockSize = 16;
+
+        [TestMethod]
+        [Timeout(30_000, CooperativeCancellation = true)]
+        public void Connect_TbsDevice_Succeeds()
+        {
+            using Tpm2Device device = CreateConnectedDevice();
+            Assert.IsNotNull(device);
+        }
+
+        [TestMethod]
+        [Timeout(120_000, CooperativeCancellation = true)]
+        [DataRow(0)]
+        [DataRow(1)]
+        [DataRow(16)]
+        [DataRow(32)]
+        [DataRow(64)]
+        [DataRow(256)]
+        public void EncryptDecrypt_Roundtrip_VariousLengths_ReturnsOriginalPlaintext(int length)
+        {
+            byte[] plain = CreatePlain(length);
+            FileInfo kekFile = NewKekFile();
+
+            try
+            {
+                using TpmKekCipher cipher = CreateCipher(kekFile);
+                byte[] encrypted = cipher.Encrypt(plain);
+                byte[] decrypted = cipher.Decrypt(encrypted);
+
+                CollectionAssert.AreEqual(plain, decrypted);
             }
             finally
             {
@@ -171,143 +362,11 @@ namespace Biz.Bizadm.KMSTest.Cipher.Tpm
             }
         }
 
-        [TestMethod]
-        [Timeout(120_000, CooperativeCancellation = true)]
-        public void Encrypt_AfterDispose_ThrowsObjectDisposedException()
+        protected override Tpm2Device CreateConnectedDevice()
         {
-            FileInfo kekFile = NewKekFile();
-
-            try
-            {
-                TpmKekCipher cipher = CreateCipher(kekFile);
-                cipher.Dispose();
-
-                Assert.ThrowsExactly<ObjectDisposedException>(() => cipher.Encrypt(CreatePlain(8)));
-            }
-            finally
-            {
-                DeleteQuietly(kekFile);
-            }
-        }
-
-        [TestMethod]
-        [Timeout(120_000, CooperativeCancellation = true)]
-        public void Decrypt_AfterDispose_ThrowsObjectDisposedException()
-        {
-            FileInfo kekFile = NewKekFile();
-
-            try
-            {
-                TpmKekCipher cipher = CreateCipher(kekFile);
-                byte[] encrypted = cipher.Encrypt(CreatePlain(8));
-                cipher.Dispose();
-
-                Assert.ThrowsExactly<ObjectDisposedException>(() => cipher.Decrypt(encrypted));
-            }
-            finally
-            {
-                DeleteQuietly(kekFile);
-            }
-        }
-
-        [TestMethod]
-        [Timeout(120_000, CooperativeCancellation = true)]
-        public void Rotate_RewrapDek_PreservesPlaintext()
-        {
-            byte[] plain = CreatePlain(32);
-            FileInfo oldKekFile = NewKekFile();
-            FileInfo newKekFile = NewKekFile();
-            FileInfo dekFile = new(Path.Combine(Path.GetTempPath(), $"kms-tpm-dek-{Guid.NewGuid():N}.bin"));
-
-            try
-            {
-                using TpmKekCipher oldKek = CreateCipher(oldKekFile);
-                byte[] wrapped = oldKek.Encrypt(plain);
-
-                using TpmKekCipher newKek = oldKek.Rotate(newKekFile);
-                Assert.AreNotEqual(oldKek.KeyId, newKek.KeyId);
-
-                byte[] rewrapped = newKek.RewrapDek(oldKek, wrapped);
-                CollectionAssert.AreEqual(plain, newKek.Decrypt(rewrapped));
-            }
-            finally
-            {
-                DeleteQuietly(oldKekFile);
-                DeleteQuietly(newKekFile);
-                DeleteQuietly(dekFile);
-            }
-        }
-
-        [TestMethod]
-        [Timeout(120_000, CooperativeCancellation = true)]
-        public void Dispose_DoesNotCloseSharedDevice()
-        {
-            byte[] plain = CreatePlain(16);
-            FileInfo kekFile1 = NewKekFile();
-            FileInfo kekFile2 = NewKekFile();
-            Tpm2Device device = CreateConnectedDevice();
-
-            try
-            {
-                using (TpmKekCipher first = TpmKekCipher.Create(device, new FixedPasswordCredentialProvider(Password), kekFile1))
-                {
-                    byte[] encrypted = first.Encrypt(plain);
-                }
-
-                using TpmKekCipher second = TpmKekCipher.Create(device, new FixedPasswordCredentialProvider(Password), kekFile2);
-                CollectionAssert.AreEqual(plain, second.Decrypt(second.Encrypt(plain)));
-            }
-            finally
-            {
-                DeleteQuietly(kekFile1);
-                DeleteQuietly(kekFile2);
-                device.Close();
-            }
-        }
-
-        [TestMethod]
-        [Timeout(120_000, CooperativeCancellation = true)]
-        public void Dispose_CalledTwice_DoesNotThrow()
-        {
-            FileInfo kekFile = NewKekFile();
-
-            try
-            {
-                TpmKekCipher cipher = CreateCipher(kekFile);
-                cipher.Dispose();
-                cipher.Dispose();
-            }
-            finally
-            {
-                DeleteQuietly(kekFile);
-            }
-        }
-
-        protected TpmKekCipher CreateCipher(FileInfo kekBlobFile)
-            => TpmKekCipher.Create(CreateConnectedDevice(), new FixedPasswordCredentialProvider(Password), kekBlobFile);
-
-        protected static FileInfo NewKekFile()
-            => new(Path.Combine(Path.GetTempPath(), $"kms-tpm-kek-{Guid.NewGuid():N}.blob"));
-
-        protected static void DeleteQuietly(FileInfo file)
-        {
-            try
-            {
-                file.Refresh();
-                if (file.Exists)
-                    file.Delete();
-            }
-            catch (IOException)
-            {
-            }
-        }
-
-        protected static byte[] CreatePlain(int length)
-        {
-            byte[] plain = new byte[length];
-            if (length > 0)
-                RandomNumberGenerator.Fill(plain);
-            return plain;
+            TbsDevice device = new();
+            device.Connect();
+            return device;
         }
     }
 
@@ -315,14 +374,67 @@ namespace Biz.Bizadm.KMSTest.Cipher.Tpm
     [TestCategory("Manual")]
     [DoNotParallelize]
     [OSCondition(OperatingSystems.Windows)]
-    public sealed class TpmKekCipherTbsDeviceTests : TpmKekCipherDeviceTests
+    public sealed class TpmKekCipherRsaOaepTbsDeviceTests : TpmKekCipherDeviceTests
     {
+        private const int Rsa2048CiphertextSize = 256;
+
+        protected override TpmKekOptions Options => new() { WrapMode = TpmKekWrapMode.RsaOaep256 };
+
         [TestMethod]
-        [Timeout(30_000, CooperativeCancellation = true)]
-        public void Connect_TbsDevice_Succeeds()
+        [Timeout(120_000, CooperativeCancellation = true)]
+        public void Encrypt_OutputLength_IsRsaKeySize()
         {
-            using Tpm2Device device = CreateConnectedDevice();
-            Assert.IsNotNull(device);
+            byte[] plain = CreatePlain(32);
+            FileInfo kekFile = NewKekFile();
+
+            try
+            {
+                using TpmKekCipher cipher = CreateCipher(kekFile);
+                byte[] encrypted = cipher.Encrypt(plain);
+                Assert.HasCount(Rsa2048CiphertextSize, encrypted);
+            }
+            finally
+            {
+                DeleteQuietly(kekFile);
+            }
+        }
+
+        [TestMethod]
+        [Timeout(120_000, CooperativeCancellation = true)]
+        public void Decrypt_TamperedCiphertext_ThrowsTpmException()
+        {
+            byte[] plain = CreatePlain(32);
+            FileInfo kekFile = NewKekFile();
+
+            try
+            {
+                using TpmKekCipher cipher = CreateCipher(kekFile);
+                byte[] encrypted = cipher.Encrypt(plain);
+                encrypted[^1] ^= 0xFF;
+
+                Assert.Throws<TpmException>(() => cipher.Decrypt(encrypted));
+            }
+            finally
+            {
+                DeleteQuietly(kekFile);
+            }
+        }
+
+        [TestMethod]
+        [Timeout(120_000, CooperativeCancellation = true)]
+        public void Encrypt_PlaintextExceedsRsaOaepLimit_ThrowsArgumentException()
+        {
+            FileInfo kekFile = NewKekFile();
+
+            try
+            {
+                using TpmKekCipher cipher = CreateCipher(kekFile);
+                Assert.ThrowsExactly<ArgumentException>(() => cipher.Encrypt(CreatePlain(200)));
+            }
+            finally
+            {
+                DeleteQuietly(kekFile);
+            }
         }
 
         protected override Tpm2Device CreateConnectedDevice()

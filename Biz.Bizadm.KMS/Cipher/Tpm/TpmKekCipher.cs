@@ -4,12 +4,18 @@ using Tpm2Lib;
 namespace Biz.Bizadm.KMS.Cipher.Tpm
 {
     /// <summary>
-    /// TPM 2.0 내부 AES-256-CFB KEK로 키 물질을 wrap/unwrap하는 암호.
+    /// TPM 2.0 내부 KEK로 키 물질을 wrap/unwrap하는 암호.
+    /// AES-256-CFB 또는 RSA-OAEP-256 모드를 지원한다.
     /// </summary>
     public sealed class TpmKekCipher : IKekCipher
     {
+        private static readonly SchemeOaep OaepSha256 = new(TpmAlgId.Sha256);
+
         private readonly Tpm2Device device;
         private readonly IKekCredentialProvider credentialProvider;
+        private readonly TpmKekOptions options;
+        private readonly TpmKekWrapMode wrapMode;
+        private readonly int rsaKeySize;
         private readonly Tpm2 tpm;
 
         private TpmHandle? srkHandle;
@@ -17,19 +23,27 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
         private bool disposedValue;
 
         private const int AesBlockSize = 16;
+        private const int OaepSha256HashSize = 32;
 
         /// <inheritdoc />
         public string KeyId { get; }
 
-        private TpmKekCipher(Tpm2Device device, IKekCredentialProvider credentialProvider, byte[] password, FileInfo kekBlobFile)
+        private TpmKekCipher(
+            Tpm2Device device,
+            IKekCredentialProvider credentialProvider,
+            byte[] password,
+            FileInfo kekBlobFile,
+            TpmKekOptions options)
         {
             ArgumentNullException.ThrowIfNull(device);
             ArgumentNullException.ThrowIfNull(credentialProvider);
             ArgumentNullException.ThrowIfNull(password);
             ArgumentNullException.ThrowIfNull(kekBlobFile);
+            ArgumentNullException.ThrowIfNull(options);
 
             this.device = device;
             this.credentialProvider = credentialProvider;
+            this.options = options;
 
             TpmPublic keySpec = ApplyPassword(CreateDefaultSrkKeySpec(), password);
             tpm = new Tpm2(device);
@@ -41,15 +55,19 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
                 if (kekBlobFile.Exists)
                 {
                     TpmKekBlob kekBlob = TpmKekBlob.Load(kekBlobFile);
+                    wrapMode = InferWrapMode(kekBlob.Public);
+                    rsaKeySize = GetRsaKeySize(kekBlob.Public, options.RsaKeySize);
                     kekHandle = LoadKek(tpm, srkHandle, kekBlob);
                     KeyId = CreateKeyId(kekBlob.Public);
                 }
                 else
                 {
+                    wrapMode = options.WrapMode;
+                    rsaKeySize = options.RsaKeySize;
                     TpmPrivate kekPrivate = tpm.Create(
                         srkHandle,
                         new SensitiveCreate(null, null),
-                        CreateKekKeySpec(),
+                        CreateKekKeySpec(options),
                         null,
                         [],
                         out TpmPublic kekPublic,
@@ -88,6 +106,46 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
             ObjectDisposedException.ThrowIf(disposedValue, this);
             ArgumentNullException.ThrowIfNull(plain);
 
+            return wrapMode switch
+            {
+                TpmKekWrapMode.Aes256Cfb => EncryptAes(plain),
+                TpmKekWrapMode.RsaOaep256 => EncryptRsa(plain),
+                _ => throw new InvalidOperationException($"Unsupported wrap mode: {wrapMode}.")
+            };
+        }
+
+        /// <inheritdoc />
+        public byte[] Decrypt(byte[] encrypted)
+        {
+            ObjectDisposedException.ThrowIf(disposedValue, this);
+            ArgumentNullException.ThrowIfNull(encrypted);
+
+            return wrapMode switch
+            {
+                TpmKekWrapMode.Aes256Cfb => DecryptAes(encrypted),
+                TpmKekWrapMode.RsaOaep256 => DecryptRsa(encrypted),
+                _ => throw new InvalidOperationException($"Unsupported wrap mode: {wrapMode}.")
+            };
+        }
+
+        /// <summary>
+        /// 동일 SRK 아래 새 KEK blob으로 로테이션된 <see cref="TpmKekCipher"/>를 생성한다.
+        /// </summary>
+        /// <param name="newKekBlobFile">새 KEK blob 저장 파일.</param>
+        /// <param name="options">wrap 모드·RSA 키 옵션. null이면 현재 옵션을 재사용한다.</param>
+        /// <returns>새 <see cref="TpmKekCipher"/>.</returns>
+        public TpmKekCipher Rotate(FileInfo newKekBlobFile, TpmKekOptions? options = null)
+        {
+            ObjectDisposedException.ThrowIf(disposedValue, this);
+            ArgumentNullException.ThrowIfNull(newKekBlobFile);
+            return Create(device, credentialProvider, newKekBlobFile, options ?? this.options);
+        }
+
+        private TpmHandle Kek
+            => kekHandle ?? throw new InvalidOperationException("KEK is not loaded.");
+
+        private byte[] EncryptAes(byte[] plain)
+        {
             byte[] iv = new byte[AesBlockSize];
             RandomNumberGenerator.Fill(iv);
             byte[] cipher = tpm.EncryptDecrypt(Kek, 0, TpmAlgId.Cfb, iv, plain, out _);
@@ -98,11 +156,8 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
             return output;
         }
 
-        /// <inheritdoc />
-        public byte[] Decrypt(byte[] encrypted)
+        private byte[] DecryptAes(byte[] encrypted)
         {
-            ObjectDisposedException.ThrowIf(disposedValue, this);
-            ArgumentNullException.ThrowIfNull(encrypted);
             if (encrypted.Length < AesBlockSize)
                 throw new ArgumentException("Encrypted payload is shorter than the AES-CFB IV.", nameof(encrypted));
 
@@ -111,20 +166,53 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
             return tpm.EncryptDecrypt(Kek, 1, TpmAlgId.Cfb, iv, cipher, out _);
         }
 
-        /// <summary>
-        /// 동일 SRK 아래 새 KEK blob으로 로테이션된 <see cref="TpmKekCipher"/>를 생성한다.
-        /// </summary>
-        /// <param name="newKekBlobFile">새 KEK blob 저장 파일.</param>
-        /// <returns>새 <see cref="TpmKekCipher"/>.</returns>
-        public TpmKekCipher Rotate(FileInfo newKekBlobFile)
+        private byte[] EncryptRsa(byte[] plain)
         {
-            ObjectDisposedException.ThrowIf(disposedValue, this);
-            ArgumentNullException.ThrowIfNull(newKekBlobFile);
-            return Create(device, credentialProvider, newKekBlobFile);
+            ValidateRsaPlaintextSize(plain.Length);
+            return tpm.RsaEncrypt(Kek, plain, OaepSha256, null);
         }
 
-        private TpmHandle Kek
-            => kekHandle ?? throw new InvalidOperationException("KEK is not loaded.");
+        private byte[] DecryptRsa(byte[] encrypted)
+        {
+            return tpm.RsaDecrypt(Kek, encrypted, OaepSha256, null);
+        }
+
+        private void ValidateRsaPlaintextSize(int plaintextLength)
+        {
+            int maxPlaintextLength = GetMaxRsaOaepPlaintextSize(rsaKeySize);
+            if (plaintextLength > maxPlaintextLength)
+            {
+                throw new ArgumentException(
+                    $"Plaintext length {plaintextLength} exceeds RSA-OAEP maximum of {maxPlaintextLength} bytes for {rsaKeySize}-bit keys.",
+                    "plain");
+            }
+        }
+
+        private static int GetRsaKeySize(TpmPublic kekPublic, int fallbackKeySize)
+        {
+            if (kekPublic.type != TpmAlgId.Rsa)
+                return fallbackKeySize;
+
+            if (kekPublic.parameters is not RsaParms rsaParms)
+                throw new InvalidDataException("RSA KEK public parameters are missing.");
+
+            return rsaParms.keyBits;
+        }
+
+        private static int GetMaxRsaOaepPlaintextSize(int rsaKeySize)
+            => rsaKeySize / 8 - 2 * OaepSha256HashSize - 2;
+
+        private static TpmKekWrapMode InferWrapMode(TpmPublic kekPublic)
+        {
+            ArgumentNullException.ThrowIfNull(kekPublic);
+
+            return kekPublic.type switch
+            {
+                TpmAlgId.Symcipher => TpmKekWrapMode.Aes256Cfb,
+                TpmAlgId.Rsa => TpmKekWrapMode.RsaOaep256,
+                _ => throw new NotSupportedException($"Unsupported TPM KEK type: {kekPublic.type}.")
+            };
+        }
 
         private static string CreateKeyId(TpmPublic publicKey)
         {
@@ -244,16 +332,32 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
                 out _);
         }
 
-        private static TpmPublic CreateKekKeySpec()
+        private static TpmPublic CreateKekKeySpec(TpmKekOptions options)
         {
-            return new TpmPublic(
-                TpmAlgId.Sha256,
-                ObjectAttr.Decrypt | ObjectAttr.Encrypt |
-                ObjectAttr.FixedParent | ObjectAttr.FixedTPM |
-                ObjectAttr.UserWithAuth | ObjectAttr.SensitiveDataOrigin | ObjectAttr.NoDA,
-                null,
-                new SymDefObject(TpmAlgId.Aes, 256, TpmAlgId.Cfb),
-                new Tpm2bDigestSymcipher());
+            return options.WrapMode switch
+            {
+                TpmKekWrapMode.Aes256Cfb => new TpmPublic(
+                    TpmAlgId.Sha256,
+                    ObjectAttr.Decrypt | ObjectAttr.Encrypt |
+                    ObjectAttr.FixedParent | ObjectAttr.FixedTPM |
+                    ObjectAttr.UserWithAuth | ObjectAttr.SensitiveDataOrigin | ObjectAttr.NoDA,
+                    null,
+                    new SymDefObject(TpmAlgId.Aes, 256, TpmAlgId.Cfb),
+                    new Tpm2bDigestSymcipher()),
+                TpmKekWrapMode.RsaOaep256 => new TpmPublic(
+                    TpmAlgId.Sha256,
+                    ObjectAttr.Decrypt |
+                    ObjectAttr.FixedParent | ObjectAttr.FixedTPM |
+                    ObjectAttr.UserWithAuth | ObjectAttr.SensitiveDataOrigin | ObjectAttr.NoDA,
+                    null,
+                    new RsaParms(
+                        new SymDefObject(),
+                        new SchemeOaep(TpmAlgId.Sha256),
+                        (ushort)options.RsaKeySize,
+                        0),
+                    new Tpm2bPublicKeyRsa()),
+                _ => throw new NotSupportedException($"Unsupported wrap mode: {options.WrapMode}.")
+            };
         }
 
         /// <summary>
@@ -262,13 +366,19 @@ namespace Biz.Bizadm.KMS.Cipher.Tpm
         /// <param name="device">연결된 TPM 디바이스. 수명은 호출부가 관리하며, cipher Dispose 시 device는 닫히지 않는다.</param>
         /// <param name="credentialProvider">SRK 유도용 패스워드 제공자.</param>
         /// <param name="kekBlobFile">KEK blob 저장·로드 파일.</param>
+        /// <param name="options">wrap 모드·RSA 키 옵션.</param>
         /// <returns>생성된 <see cref="TpmKekCipher"/>.</returns>
-        public static TpmKekCipher Create(Tpm2Device device, IKekCredentialProvider credentialProvider, FileInfo kekBlobFile)
+        public static TpmKekCipher Create(
+            Tpm2Device device,
+            IKekCredentialProvider credentialProvider,
+            FileInfo kekBlobFile,
+            TpmKekOptions? options = null)
         {
+            options ??= new TpmKekOptions();
             byte[] password = credentialProvider.GetPassword();
             try
             {
-                return new TpmKekCipher(device, credentialProvider, password, kekBlobFile);
+                return new TpmKekCipher(device, credentialProvider, password, kekBlobFile, options);
             }
             finally
             {

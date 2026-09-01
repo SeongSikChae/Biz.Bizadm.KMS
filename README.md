@@ -10,7 +10,7 @@ Key Management System 라이브러리. 공통 `ICipher` 아래에 KEK wrap/unwra
 ICipher
 ├── IKekCipher                       # 키 물질 wrap/unwrap (DEK 보호)
 │   ├── AesGcmKekCipher              # 소프트웨어 AES-GCM
-│   ├── TpmKekCipher                 # TPM AES-256-CFB
+│   ├── TpmKekCipher                 # TPM AES-256-CFB / RSA-OAEP-256
 │   ├── AzureKeyVaultKekCipher       # Azure Key Vault RSA-OAEP wrap
 │   └── Pkcs11KekCipher              # PKCS#11 HSM RSA-OAEP wrap (별도 패키지)
 ├── IKekManager                      # KEK 버전 관리·DEK re-wrap
@@ -136,7 +136,7 @@ Linux 헤드리스에서는 프로세스 시작 전에 `GCM_CREDENTIAL_STORE=gpg
 | 구현 | 키 | 알고리즘 | 출력 |
 |---|---|---|---|
 | `AesGcmKekCipher` | PBKDF2-SHA256으로 유도 | AES-256-GCM (`System.Security.Cryptography`) | `nonce(12) \|\| cipher \|\| tag(16)` |
-| `TpmKekCipher` | TPM 내부 AES-256 키 (SRK 자식) | TPM `EncryptDecrypt` AES-256-CFB | `iv(16) \|\| cipher` |
+| `TpmKekCipher` | TPM 내부 KEK (SRK 자식) | AES-256-CFB(기본) 또는 RSA-OAEP-256 | AES: `iv(16) \|\| cipher` / RSA: `keySize/8` 바이트 |
 | `AzureKeyVaultKekCipher` | Key Vault RSA-4096 (Wrap/Unwrap) | RSA-OAEP-256 (`CryptographyClient`) | wrap된 키 바이트 |
 | `Pkcs11KekCipher` | HSM RSA-4096 (토큰 영구 키) | RSA-OAEP-256 (`C_WrapKey`/`C_UnwrapKey`) | wrap된 키 바이트 |
 
@@ -271,18 +271,30 @@ dotnet test --filter "FullyQualifiedName~SoftHsm"
 
 TPM 2.0에 KEK를 두고 암·복호화한다. TSS.Net (`Microsoft.TSS`) 사용.
 
-생성: `TpmKekCipher.Create(Tpm2Device device, IKekCredentialProvider credentialProvider, FileInfo kekBlobFile)`. 디바이스 연결은 호출부가 한다.
+생성: `TpmKekCipher.Create(Tpm2Device device, IKekCredentialProvider credentialProvider, FileInfo kekBlobFile, TpmKekOptions? options = null)`. 디바이스 연결은 호출부가 한다.
 
-- `Rotate(FileInfo newKekBlobFile)` — 동일 SRK 아래 새 KEK blob 생성
+- `Rotate(FileInfo newKekBlobFile, TpmKekOptions? options = null)` — 동일 SRK 아래 새 KEK blob 생성
 - `KeyId`: `tpm:{SHA256(kekPublic)}`
 - `Dispose` 시 TPM 핸들(SRK·KEK)만 flush한다. **`Tpm2Device`는 닫지 않는다** — TSS.Net `Tpm2.Dispose()`가 device까지 Dispose하기 때문에, 공유 device를 쓰는 Rotate·`Release` 시나리오에서 연결이 끊기지 않도록 의도적으로 생략했다. device `Close`/`Dispose`는 호출부 책임이다.
+
+### Wrap 모드 (`TpmKekOptions`)
+
+| 모드 | KEK 타입 | wrap 알고리즘 | 출력 |
+|---|---|---|---|
+| `Aes256Cfb` (기본) | TPM AES-256 대칭키 | `EncryptDecrypt` AES-256-CFB | `iv(16) \|\| cipher` |
+| `RsaOaep256` | TPM RSA 비대칭키 (기본 2048비트) | `RsaEncrypt` / `RsaDecrypt` OAEP-SHA256 | `keySize/8` 바이트 |
+
+기존 blob을 로드할 때는 `TpmPublic.type`으로 모드를 자동 감지한다 (`Symcipher` → AES, `Rsa` → RSA-OAEP). AES blob과 RSA blob은 호환되지 않으므로 모드를 바꾸려면 새 blob을 만들어야 한다.
+
+```csharp
+var rsaOptions = new TpmKekOptions { WrapMode = TpmKekWrapMode.RsaOaep256 };
+using TpmKekCipher kek = TpmKekCipher.Create(device, creds, kekBlobFile, rsaOptions);
+```
 
 ### 키 계층
 
 1. **SRK** — Owner 계층 `CreatePrimary`. RSA-2048 storage parent (restricted decrypt). `password`의 SHA-256을 unique에 넣어 동일 패스워드면 같은 SRK가 나온다.
-2. **KEK** — SRK 아래 AES-256-CFB 대칭키. 없으면 생성 후 blob 저장, 있으면 blob에서 `Load`.
-
-기존 RSA-OAEP KEK 경로는 소스에 주석으로 남아 있다. RSA blob과 AES blob은 호환되지 않으므로 알고리즘을 바꾸면 blob을 다시 만들어야 한다.
+2. **KEK** — SRK 아래 대칭(AES-256-CFB) 또는 비대칭(RSA-OAEP) 키. 없으면 `TpmKekOptions.WrapMode`에 따라 생성 후 blob 저장, 있으면 blob에서 `Load`.
 
 ### Blob (`TpmKekBlob`)
 
@@ -290,7 +302,7 @@ TPM 2.0에 KEK를 두고 암·복호화한다. TSS.Net (`Microsoft.TSS`) 사용.
 
 `FileInfo.Exists`는 캐시되므로 생성·로드 경로는 `Refresh()` 후 존재 여부를 본다.
 
-### AES-256-CFB
+### AES-256-CFB (기본)
 
 TPM 2.0은 GCM을 지원하지 않아 CFB를 쓴다.
 
@@ -299,6 +311,13 @@ TPM 2.0은 GCM을 지원하지 않아 CFB를 쓴다.
 - 인증 태그 없음. 변조되어도 TPM이 성공하고 다른 평문을 반환할 수 있다.
 
 일부 Windows 실물 TPM은 export 규제 등으로 `EncryptDecrypt`를 막아 두기도 한다. 이 환경의 TBS 테스트에서는 AES-CFB 라운드트립이 통과했다.
+
+### RSA-OAEP-256
+
+- Encrypt: `RsaEncrypt`(OAEP-SHA256) — DEK(32바이트)를 직접 wrap
+- Decrypt: `RsaDecrypt`(OAEP-SHA256)
+- OAEP 패딩으로 변조 시 복호화가 실패한다 (`TpmException`)
+- RSA-2048 기준 최대 평문 ~190바이트 (DEK 32바이트에 충분)
 
 ## TPM 디바이스
 
@@ -328,7 +347,7 @@ swtpm socket \
 
 ### Windows `TbsDevice`
 
-로컬 TPM (TBS). TSS.Net의 `TbsDevice` + `Connect()`. 현재 `TpmKekCipher`는 AES-256-CFB `EncryptDecrypt` 경로를 사용한다.
+로컬 TPM (TBS). TSS.Net의 `TbsDevice` + `Connect()`. `TpmKekCipher`는 기본 AES-256-CFB 또는 `TpmKekOptions`로 RSA-OAEP-256을 선택할 수 있다.
 
 ## 테스트
 
@@ -351,8 +370,10 @@ TPM 기능·성능 테스트는 디바이스별 파생 클래스로 나뉜다. P
 
 | 클래스 | 베이스 | 대상 |
 |---|---|---|
-| `TpmKekCipherTbsDeviceTests` | `TpmKekCipherDeviceTests` | Windows TBS (`[OSCondition(Windows)]`) |
-| `TpmKekCipherTbsDevicePerformanceTests` | `TpmKekCipherDevicePerformanceTests` | TBS 성능 (횟수·지연 한도를 하드웨어에 맞춤) |
+| `TpmKekCipherAesTbsDeviceTests` | `TpmKekCipherDeviceTests` | Windows TBS AES-256-CFB (`[OSCondition(Windows)]`) |
+| `TpmKekCipherRsaOaepTbsDeviceTests` | `TpmKekCipherDeviceTests` | Windows TBS RSA-OAEP-256 (`[OSCondition(Windows)]`) |
+| `TpmKekCipherAesTbsDevicePerformanceTests` | `TpmKekCipherDevicePerformanceTests` | TBS AES 성능 (횟수·지연 한도를 하드웨어에 맞춤) |
+| `TpmKekCipherRsaOaepTbsDevicePerformanceTests` | `TpmKekCipherDevicePerformanceTests` | TBS RSA-OAEP 성능 |
 | `AzureKeyVaultKekCipherTests` | — | Key Vault RSA wrap·Rotate (`[OSCondition(Windows)]`, 환경 변수·클라이언트 인증서 필요) |
 | `AzureKeyVaultKekCipherPerformanceTests` | — | Key Vault RSA wrap 성능 (`[OSCondition(Windows)]`) |
 | `AzureKeyVaultKekManagerTests` | — | Manager Rotate + re-wrap (`[OSCondition(Windows)]`) |
@@ -387,17 +408,27 @@ TBS AES 기능 테스트는 이 환경에서 18건 통과했다. 원격 swtpm용
 
 DEK wrap 용도로는 사실상 CPU-bound이며 서브밀리초다.
 
-### `TpmKekCipher` (Windows 실물 TPM, AES-256-CFB)
+### `TpmKekCipher` — AES-256-CFB (Windows 실물 TPM)
 
-테스트: `TpmKekCipherTbsDevicePerformanceTests` (`[TestCategory("Manual")]`, `[OSCondition(Windows)]`)
+테스트: `TpmKekCipherAesTbsDevicePerformanceTests` (`[TestCategory("Manual")]`, `[OSCondition(Windows)]`)
 
 | 항목 | 값 |
 |---|---|
 | 디바이스 | `TbsDevice` + `Connect()` (로컬 TPM) |
-| 처리량 | 20 ops 순차, p50 ≈ **31ms**, p95 ≈ **32ms**, ≈ **32 ops/s** |
+| 처리량 | 20 ops 순차, p50 ≈ **31ms**, p95 ≈ **47ms**, ≈ **33 ops/s** |
 | 할당 | ≈ **340KiB/roundtrip** (TSS.Net 마샬링; `secondGrowth=0`으로 누수는 관측되지 않음) |
 
-TPM은 소프트웨어 KEK 대비 **약 3만 배** 느리지만, DEK wrap처럼 저빈도 호출에는 실사용 가능한 수준이다. 동일 연결에서 동시 호출은 하지 않는다.
+### `TpmKekCipher` — RSA-OAEP-256 (Windows 실물 TPM)
+
+테스트: `TpmKekCipherRsaOaepTbsDevicePerformanceTests` (`[TestCategory("Manual")]`, `[OSCondition(Windows)]`)
+
+| 항목 | 값 |
+|---|---|
+| 디바이스 | `TbsDevice` + `Connect()` (로컬 TPM), RSA-2048 KEK |
+| 처리량 | 20 ops 순차, p50 ≈ **47ms**, p95 ≈ **61ms**, ≈ **21 ops/s** |
+| 할당 | ≈ **387KiB/roundtrip** (TSS.Net 마샬링; `secondGrowth=0`으로 누수는 관측되지 않음) |
+
+동일 TPM·동일 32바이트 DEK 기준으로 RSA-OAEP는 AES-CFB 대비 p50 약 **1.5배** 느리다. TPM은 소프트웨어 KEK 대비 **약 3만 배** 느리지만, DEK wrap처럼 저빈도 호출에는 실사용 가능한 수준이다. 동일 연결에서 동시 호출은 하지 않는다.
 
 ### `AzureKeyVaultKekCipher` (Key Vault RSA-OAEP-256)
 
@@ -416,6 +447,7 @@ Key Vault HTTPS 왕복이 지배적이며, 리전·네트워크에 따라 변동
 | 구현 | p50 (wrap+unwrap) | 상대 처리량 | 비고 |
 |---|---|---|---|
 | `AesGcmKekCipher` | ≈ 0.001ms | 기준 (최고) | 로컬 CPU, 동시 처리 가능 |
+| `TpmKekCipher` AES-256-CFB | ≈ 31ms | ≈ 1/30,000 | TBS 직렬, 할당 큼 |
+| `TpmKekCipher` RSA-OAEP-256 | ≈ 47ms | ≈ 1/47,000 | 동일 TPM에서 AES 대비 ≈1.5× 느림, 변조 시 실패 |
 | `AzureKeyVaultKekCipher` | ≈ 46ms | ≈ 1/46,000 | HTTPS + RSA, 네트워크 bound |
-| `TpmKekCipher` (Win TPM) | ≈ 31ms | ≈ 1/30,000 | TBS 직렬, 할당 큼 |
 | `Pkcs11KekCipher` (SoftHSM 2.5.0) | ≈ 2.4ms (CKM_RSA_PKCS) | — | `Pkcs11KekCipherSoftHsmPerformanceTests` (Manual). **에뮬레이터 수치이며 실물 HSM과 무관** |
