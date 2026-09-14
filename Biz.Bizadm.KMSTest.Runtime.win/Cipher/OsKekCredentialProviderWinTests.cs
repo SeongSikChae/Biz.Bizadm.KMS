@@ -1,14 +1,14 @@
 using Biz.Bizadm.KMS.Cipher;
 using Biz.Bizadm.KMS.Protect.Cipher;
 
-namespace Biz.Bizadm.KMSTest.Cipher
+namespace Biz.Bizadm.KMSTest.Runtime.win.Cipher
 {
     [TestClass]
-    public sealed class OsKekCredentialProviderTests
+    public sealed class OsKekCredentialProviderWinTests
     {
         [TestMethod]
         [OSCondition(OperatingSystems.Windows)]
-        public void OsKekCredentialStore_StoreGetRemove_RoundTrips()
+        public void StoreGetRemove_RoundTrips()
         {
             IOsKekCredentialStore provider = OsKekCredentialProvider.CreateForCurrentOs(
                 NewService(),
@@ -26,32 +26,6 @@ namespace Biz.Bizadm.KMSTest.Cipher
 
             Assert.AreEqual(
                 "Biz.Bizadm.KMS.Protect.Cipher.WindowsCredentialManagerKekCredentialProvider",
-                provider.GetType().FullName);
-        }
-
-        [TestMethod]
-        [OSCondition(OperatingSystems.Linux)]
-        public void CreateForCurrentOs_Linux_ReturnsLinuxProvider()
-        {
-            IOsKekCredentialStore provider = OsKekCredentialProvider.CreateForCurrentOs(
-                NewService(),
-                "unit-test");
-
-            Assert.AreEqual(
-                "Biz.Bizadm.KMS.Protect.Cipher.LinuxSecretServiceKekCredentialProvider",
-                provider.GetType().FullName);
-        }
-
-        [TestMethod]
-        [OSCondition(OperatingSystems.OSX)]
-        public void CreateForCurrentOs_Osx_ReturnsOsxProvider()
-        {
-            IOsKekCredentialStore provider = OsKekCredentialProvider.CreateForCurrentOs(
-                NewService(),
-                "unit-test");
-
-            Assert.AreEqual(
-                "Biz.Bizadm.KMS.Protect.Cipher.MacOsKeychainKekCredentialProvider",
                 provider.GetType().FullName);
         }
 
@@ -101,3 +75,4 @@ namespace Biz.Bizadm.KMSTest.Cipher
         }
     }
 }
+

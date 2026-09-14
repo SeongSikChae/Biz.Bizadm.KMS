@@ -1,45 +1,19 @@
 using Biz.Bizadm.KMS.Cipher;
 using Biz.Bizadm.KMS.Protect.Cipher;
 
-namespace Biz.Bizadm.KMSTest.Cipher
+namespace Biz.Bizadm.KMSTest.Runtime.osx.Cipher
 {
     [TestClass]
-    public sealed class OsKekCredentialProviderTests
+    public sealed class OsKekCredentialProviderOsxTests
     {
         [TestMethod]
-        [OSCondition(OperatingSystems.Windows)]
-        public void OsKekCredentialStore_StoreGetRemove_RoundTrips()
+        [OSCondition(OperatingSystems.OSX)]
+        public void StoreGetRemove_RoundTrips()
         {
             IOsKekCredentialStore provider = OsKekCredentialProvider.CreateForCurrentOs(
                 NewService(),
                 "unit-test");
             RoundTrip(provider);
-        }
-
-        [TestMethod]
-        [OSCondition(OperatingSystems.Windows)]
-        public void CreateForCurrentOs_Windows_ReturnsWindowsProvider()
-        {
-            IOsKekCredentialStore provider = OsKekCredentialProvider.CreateForCurrentOs(
-                NewService(),
-                "unit-test");
-
-            Assert.AreEqual(
-                "Biz.Bizadm.KMS.Protect.Cipher.WindowsCredentialManagerKekCredentialProvider",
-                provider.GetType().FullName);
-        }
-
-        [TestMethod]
-        [OSCondition(OperatingSystems.Linux)]
-        public void CreateForCurrentOs_Linux_ReturnsLinuxProvider()
-        {
-            IOsKekCredentialStore provider = OsKekCredentialProvider.CreateForCurrentOs(
-                NewService(),
-                "unit-test");
-
-            Assert.AreEqual(
-                "Biz.Bizadm.KMS.Protect.Cipher.LinuxSecretServiceKekCredentialProvider",
-                provider.GetType().FullName);
         }
 
         [TestMethod]
@@ -56,7 +30,7 @@ namespace Biz.Bizadm.KMSTest.Cipher
         }
 
         [TestMethod]
-        [OSCondition(OperatingSystems.Windows)]
+        [OSCondition(OperatingSystems.OSX)]
         public void AesGcmKekCipher_AcceptsOsCredentialProvider()
         {
             IOsKekCredentialStore provider = OsKekCredentialProvider.CreateForCurrentOs(
@@ -101,3 +75,4 @@ namespace Biz.Bizadm.KMSTest.Cipher
         }
     }
 }
+
