@@ -1,5 +1,5 @@
 using Biz.Bizadm.KMS.Cipher;
-using Biz.Bizadm.KMS.Protect.Cipher;
+using Biz.Bizadm.KMS.Credentials.Cipher;
 
 namespace Biz.Bizadm.KMSTest.Runtime.osx.Cipher
 {
@@ -25,7 +25,7 @@ namespace Biz.Bizadm.KMSTest.Runtime.osx.Cipher
                 "unit-test");
 
             Assert.AreEqual(
-                "Biz.Bizadm.KMS.Protect.Cipher.MacOsKeychainKekCredentialProvider",
+                "Biz.Bizadm.KMS.Credentials.Cipher.MacOsKeychainKekCredentialProvider",
                 provider.GetType().FullName);
         }
 

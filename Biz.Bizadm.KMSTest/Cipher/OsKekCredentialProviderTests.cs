@@ -1,5 +1,5 @@
 using Biz.Bizadm.KMS.Cipher;
-using Biz.Bizadm.KMS.Protect.Cipher;
+using Biz.Bizadm.KMS.Credentials.Cipher;
 
 namespace Biz.Bizadm.KMSTest.Cipher
 {
@@ -25,7 +25,7 @@ namespace Biz.Bizadm.KMSTest.Cipher
                 "unit-test");
 
             Assert.AreEqual(
-                "Biz.Bizadm.KMS.Protect.Cipher.WindowsCredentialManagerKekCredentialProvider",
+                "Biz.Bizadm.KMS.Credentials.Cipher.WindowsCredentialManagerKekCredentialProvider",
                 provider.GetType().FullName);
         }
 
@@ -38,7 +38,7 @@ namespace Biz.Bizadm.KMSTest.Cipher
                 "unit-test");
 
             Assert.AreEqual(
-                "Biz.Bizadm.KMS.Protect.Cipher.LinuxSecretServiceKekCredentialProvider",
+                "Biz.Bizadm.KMS.Credentials.Cipher.LinuxSecretServiceKekCredentialProvider",
                 provider.GetType().FullName);
         }
 
@@ -51,7 +51,7 @@ namespace Biz.Bizadm.KMSTest.Cipher
                 "unit-test");
 
             Assert.AreEqual(
-                "Biz.Bizadm.KMS.Protect.Cipher.MacOsKeychainKekCredentialProvider",
+                "Biz.Bizadm.KMS.Credentials.Cipher.MacOsKeychainKekCredentialProvider",
                 provider.GetType().FullName);
         }
 

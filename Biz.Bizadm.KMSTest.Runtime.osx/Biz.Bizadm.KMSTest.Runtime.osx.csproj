@@ -13,8 +13,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Biz.Bizadm.KMS\Biz.Bizadm.KMS.csproj" />
-    <ProjectReference Include="..\Biz.Bizadm.KMS.Protect\Biz.Bizadm.KMS.Protect.csproj" />
-    <ProjectReference Include="..\Biz.Bizadm.KMS.Protect.Runtime.osx\Biz.Bizadm.KMS.Protect.Runtime.osx.csproj" />
+    <ProjectReference Include="..\Biz.Bizadm.KMS.Credentials\Biz.Bizadm.KMS.Credentials.csproj" />
+    <ProjectReference Include="..\Biz.Bizadm.KMS.Credentials.Runtime.osx\Biz.Bizadm.KMS.Credentials.Runtime.osx.csproj" />
   </ItemGroup>
 
 </Project>

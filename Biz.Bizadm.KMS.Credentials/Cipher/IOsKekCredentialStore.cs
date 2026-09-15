@@ -1,6 +1,6 @@
 using Biz.Bizadm.KMS.Cipher;
 
-namespace Biz.Bizadm.KMS.Protect.Cipher
+namespace Biz.Bizadm.KMS.Credentials.Cipher
 {
     /// <summary>
     /// OS 자격 증명 금고에 KEK 패스워드를 저장·조회·삭제하는 <see cref="IKekCredentialProvider"/>.

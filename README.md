@@ -108,20 +108,22 @@ public interface IKekCredentialProvider
 | 구현 | 저장소 |
 |---|---|
 | `AzureKeyVaultKekCredentialProvider` | Azure Key Vault Secret (없으면 32바이트 시크릿 생성) |
-| `OsKekCredentialProvider` (`Biz.Bizadm.KMS.Protect`) | OS 자격 증명 금고 (RID별 runtime) |
+| `OsKekCredentialProvider` (`Biz.Bizadm.KMS.Credentials`) | OS 자격 증명 금고 (RID별 runtime) |
 
 그 외는 호스트 앱이 `IKekCredentialProvider`를 구현한다.
 
-## Protect (OS 자격 증명, RID runtime 패키지)
+## Credentials (OS 자격 증명, RID별 런타임 자산)
 
-소비자는 **`Biz.Bizadm.KMS.Protect`**만 참조한다. NuGet이 RID에 맞는 내부 구현 패키지를 가져온다 (직접 참조하지 않음).
+소비자는 **`Biz.Bizadm.KMS.Credentials`**만 참조한다. 패키지 내부의 `runtimes/{rid}/lib/net10.0` 자산에서 현재 RID에 맞는 구현을 선택한다.
 
-| 패키지 | 용도 |
+| 구성 요소 | 용도 |
 |---|---|
-| `Biz.Bizadm.KMS.Protect` | 퍼사드 / `IOsKekCredentialStore` / `OsKekCredentialProvider` |
-| `Biz.Bizadm.KMS.Protect.Runtime.win` | Windows Credential Manager (`wincredman`) |
-| `Biz.Bizadm.KMS.Protect.Runtime.osx` | macOS Keychain (`keychain`) |
-| `Biz.Bizadm.KMS.Protect.Runtime.linux` | Linux Secret Service (`secretservice`) |
+| `Biz.Bizadm.KMS.Credentials` | facade와 RID별 런타임 자산을 포함한 소비자용 NuGet 패키지 |
+| `runtimes/win/lib/net10.0/*` | Windows Credential Manager (`wincredman`) 구현 |
+| `runtimes/osx/lib/net10.0/*` | macOS Keychain (`keychain`) 구현 |
+| `runtimes/linux/lib/net10.0/*` | Linux Secret Service (`secretservice`) 구현 |
+
+`Biz.Bizadm.KMS.Credentials.Runtime.*` 프로젝트는 facade 패키지에 포함되는 내부 구현을 빌드하기 위한 프로젝트입니다. 소비자가 런타임 패키지를 직접 참조할 필요는 없습니다.
 
 ```csharp
 IOsKekCredentialStore creds = OsKekCredentialProvider.CreateForCurrentOs();

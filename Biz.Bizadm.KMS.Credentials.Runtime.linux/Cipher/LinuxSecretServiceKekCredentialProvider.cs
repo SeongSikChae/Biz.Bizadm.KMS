@@ -1,4 +1,4 @@
-namespace Biz.Bizadm.KMS.Protect.Cipher
+namespace Biz.Bizadm.KMS.Credentials.Cipher
 {
     /// <summary>
     /// Linux Secret Service / libsecret(<c>secretservice</c>) 기반 KEK 자격 증명 제공자.
@@ -7,7 +7,7 @@ namespace Biz.Bizadm.KMS.Protect.Cipher
     /// GUI 세션·키링 unlock이 필요할 수 있다. 헤드리스 환경에서는
     /// <c>GCM_CREDENTIAL_STORE=gpg</c> 등 다른 백킹 스토어를 프로세스 시작 전에 설정한다.
     /// </remarks>
-    public sealed class LinuxSecretServiceKekCredentialProvider : CredentialStoreKekCredentialProvider
+    internal sealed class LinuxSecretServiceKekCredentialProvider : CredentialStoreKekCredentialProvider
     {
         private LinuxSecretServiceKekCredentialProvider(
             GitCredentialManager.ICredentialStore store,
@@ -38,5 +38,11 @@ namespace Biz.Bizadm.KMS.Protect.Cipher
             EnsureCredentialStore("secretservice");
             return new LinuxSecretServiceKekCredentialProvider(CreateStore(@namespace), service, account);
         }
+    }
+
+    internal static class RuntimeOsKekCredentialStoreFactory
+    {
+        public static IOsKekCredentialStore Create(string service, string account, string? @namespace)
+            => LinuxSecretServiceKekCredentialProvider.Create(service, account, @namespace);
     }
 }

@@ -1,5 +1,5 @@
 using Biz.Bizadm.KMS.Cipher;
-using Biz.Bizadm.KMS.Protect.Cipher;
+using Biz.Bizadm.KMS.Credentials.Cipher;
 
 namespace Biz.Bizadm.KMSTest.Runtime.linux.Cipher
 {
@@ -25,7 +25,7 @@ namespace Biz.Bizadm.KMSTest.Runtime.linux.Cipher
                 "unit-test");
 
             Assert.AreEqual(
-                "Biz.Bizadm.KMS.Protect.Cipher.LinuxSecretServiceKekCredentialProvider",
+                "Biz.Bizadm.KMS.Credentials.Cipher.LinuxSecretServiceKekCredentialProvider",
                 provider.GetType().FullName);
         }
 

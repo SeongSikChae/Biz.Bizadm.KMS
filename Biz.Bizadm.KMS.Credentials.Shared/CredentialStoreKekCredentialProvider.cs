@@ -1,7 +1,7 @@
 using System.Text;
 using GitCredentialManager;
 
-namespace Biz.Bizadm.KMS.Protect.Cipher
+namespace Biz.Bizadm.KMS.Credentials.Cipher
 {
     /// <summary>
     /// Git Credential Manager 저장소를 사용하는 KEK 자격 증명 제공자 기반 형식.

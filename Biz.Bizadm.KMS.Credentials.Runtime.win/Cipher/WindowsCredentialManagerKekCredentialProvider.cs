@@ -1,9 +1,9 @@
-namespace Biz.Bizadm.KMS.Protect.Cipher
+namespace Biz.Bizadm.KMS.Credentials.Cipher
 {
     /// <summary>
     /// Windows Credential Manager(<c>wincredman</c>) 기반 KEK 자격 증명 제공자.
     /// </summary>
-    public sealed class WindowsCredentialManagerKekCredentialProvider : CredentialStoreKekCredentialProvider
+    internal sealed class WindowsCredentialManagerKekCredentialProvider : CredentialStoreKekCredentialProvider
     {
         private WindowsCredentialManagerKekCredentialProvider(
             GitCredentialManager.ICredentialStore store,
@@ -34,5 +34,11 @@ namespace Biz.Bizadm.KMS.Protect.Cipher
             EnsureCredentialStore("wincredman");
             return new WindowsCredentialManagerKekCredentialProvider(CreateStore(@namespace), service, account);
         }
+    }
+
+    internal static class RuntimeOsKekCredentialStoreFactory
+    {
+        public static IOsKekCredentialStore Create(string service, string account, string? @namespace)
+            => WindowsCredentialManagerKekCredentialProvider.Create(service, account, @namespace);
     }
 }

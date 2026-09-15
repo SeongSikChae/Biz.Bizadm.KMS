@@ -1,4 +1,4 @@
-namespace Biz.Bizadm.KMS.Protect.Cipher
+namespace Biz.Bizadm.KMS.Credentials.Cipher
 {
     /// <summary>
     /// OS 자격 증명 금고 연동 시 사용하는 기본 키 이름.

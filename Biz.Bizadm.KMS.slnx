@@ -1,10 +1,11 @@
 <Solution>
   <Project Path="Biz.Bizadm.KMS/Biz.Bizadm.KMS.csproj" />
-  <Project Path="Biz.Bizadm.KMS.Protect/Biz.Bizadm.KMS.Protect.csproj" />
-  <Project Path="Biz.Bizadm.KMS.Protect.Runtime.win/Biz.Bizadm.KMS.Protect.Runtime.win.csproj" />
-  <Project Path="Biz.Bizadm.KMS.Protect.Runtime.osx/Biz.Bizadm.KMS.Protect.Runtime.osx.csproj" />
+  <Project Path="Biz.Bizadm.KMS.Credentials/Biz.Bizadm.KMS.Credentials.csproj" />
+  <Project Path="Biz.Bizadm.KMS.Credentials.Package/Biz.Bizadm.KMS.Credentials.Package.csproj" />
+  <Project Path="Biz.Bizadm.KMS.Credentials.Runtime.win/Biz.Bizadm.KMS.Credentials.Runtime.win.csproj" />
+  <Project Path="Biz.Bizadm.KMS.Credentials.Runtime.osx/Biz.Bizadm.KMS.Credentials.Runtime.osx.csproj" />
   <Project Path="Biz.Bizadm.KMS.Pkcs11/Biz.Bizadm.KMS.Pkcs11.csproj" />
-  <Project Path="Biz.Bizadm.KMS.Protect.Runtime.linux/Biz.Bizadm.KMS.Protect.Runtime.linux.csproj" />
+  <Project Path="Biz.Bizadm.KMS.Credentials.Runtime.linux/Biz.Bizadm.KMS.Credentials.Runtime.linux.csproj" />
   <Project Path="Biz.Bizadm.KMSTest/Biz.Bizadm.KMSTest.csproj" Id="53d64c63-d7d8-44eb-9e12-48348e589e64" />
   <Project Path="Biz.Bizadm.KMSTest.Runtime.win/Biz.Bizadm.KMSTest.Runtime.win.csproj" />
   <Project Path="Biz.Bizadm.KMSTest.Runtime.linux/Biz.Bizadm.KMSTest.Runtime.linux.csproj" />

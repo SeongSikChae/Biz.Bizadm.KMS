@@ -1,9 +1,9 @@
-namespace Biz.Bizadm.KMS.Protect.Cipher
+namespace Biz.Bizadm.KMS.Credentials.Cipher
 {
     /// <summary>
     /// macOS Keychain(<c>keychain</c>) 기반 KEK 자격 증명 제공자.
     /// </summary>
-    public sealed class MacOsKeychainKekCredentialProvider : CredentialStoreKekCredentialProvider
+    internal sealed class MacOsKeychainKekCredentialProvider : CredentialStoreKekCredentialProvider
     {
         private MacOsKeychainKekCredentialProvider(
             GitCredentialManager.ICredentialStore store,
@@ -34,5 +34,11 @@ namespace Biz.Bizadm.KMS.Protect.Cipher
             EnsureCredentialStore("keychain");
             return new MacOsKeychainKekCredentialProvider(CreateStore(@namespace), service, account);
         }
+    }
+
+    internal static class RuntimeOsKekCredentialStoreFactory
+    {
+        public static IOsKekCredentialStore Create(string service, string account, string? @namespace)
+            => MacOsKeychainKekCredentialProvider.Create(service, account, @namespace);
     }
 }
