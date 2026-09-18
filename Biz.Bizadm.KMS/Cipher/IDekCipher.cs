@@ -5,6 +5,9 @@
     /// </summary>
     public interface IDekCipher : ICipher
     {
+        /// <summary>
+        /// 암·복호화 없이 입력 바이트를 그대로 통과시키는 Null DEK 인스턴스.
+        /// </summary>
         static IDekCipher Null { get; } = NullDekCipher.Instance;
     }
 

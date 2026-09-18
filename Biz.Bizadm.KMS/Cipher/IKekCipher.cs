@@ -10,6 +10,9 @@
         /// </summary>
         string KeyId { get; }
 
+        /// <summary>
+        /// wrap/unwrap 없이 입력 바이트를 그대로 통과시키는 Null KEK 인스턴스.
+        /// </summary>
         static IKekCipher Null { get; } = NullKekCipher.Instance;
     }
 
@@ -21,7 +24,8 @@
         {
         }
 
-        public string KeyId => string.Empty;
+        // Wrapped DEK envelope은 비어 있지 않은 KeyId를 요구한다.
+        public string KeyId => "null";
 
         public byte[] Encrypt(byte[] plain)
         {

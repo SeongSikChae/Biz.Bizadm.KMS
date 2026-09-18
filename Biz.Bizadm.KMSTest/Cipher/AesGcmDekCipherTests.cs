@@ -174,6 +174,44 @@ namespace Biz.Bizadm.KMSTest.Cipher
         }
 
         [TestMethod]
+        public void Create_WithNullKek_FileRoundTripWorks()
+        {
+            string directory = CreateTempDirectory();
+            FileInfo dekFile = new(Path.Combine(directory, "dek-null.bin"));
+            byte[] plain = CreatePlain(64);
+
+            using (AesGcmDekCipher creator = AesGcmDekCipher.Create(IKekCipher.Null, dekFile))
+            {
+                Assert.IsTrue(File.Exists(dekFile.FullName));
+                byte[] encrypted = creator.Encrypt(plain);
+                CollectionAssert.AreEqual(plain, creator.Decrypt(encrypted));
+            }
+
+            using AesGcmDekCipher reloaded = AesGcmDekCipher.Create(IKekCipher.Null, dekFile);
+            byte[] reloadedEncrypted = reloaded.Encrypt(plain);
+            CollectionAssert.AreEqual(plain, reloaded.Decrypt(reloadedEncrypted));
+        }
+
+        [TestMethod]
+        public void Create_WithNullKek_EnvelopeBytesRoundTripWorks()
+        {
+            string directory = CreateTempDirectory();
+            FileInfo dekFile = new(Path.Combine(directory, "dek-null-envelope.bin"));
+            byte[] plain = CreatePlain(48);
+            byte[] ciphertext;
+            byte[] envelope;
+
+            using (AesGcmDekCipher fileBacked = AesGcmDekCipher.Create(IKekCipher.Null, dekFile))
+            {
+                ciphertext = fileBacked.Encrypt(plain);
+                envelope = File.ReadAllBytes(dekFile.FullName);
+            }
+
+            using AesGcmDekCipher fromEnvelope = AesGcmDekCipher.Create(IKekCipher.Null, envelope);
+            CollectionAssert.AreEqual(plain, fromEnvelope.Decrypt(ciphertext));
+        }
+
+        [TestMethod]
         public void Rewrap_UpdatesEnvelopeAndPreservesDek()
         {
             string directory = CreateTempDirectory();
