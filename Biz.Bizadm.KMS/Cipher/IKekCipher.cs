@@ -9,5 +9,42 @@
         /// 이 KEK 인스턴스를 식별하는 ID. wrap된 DEK에 함께 저장된다.
         /// </summary>
         string KeyId { get; }
+
+        static IKekCipher Null { get; } = NullKekCipher.Instance;
+    }
+
+    internal sealed class NullKekCipher : IKekCipher
+    {
+        public static NullKekCipher Instance { get; } = new();
+
+        private NullKekCipher()
+        {
+        }
+
+        public string KeyId => string.Empty;
+
+        public byte[] Encrypt(byte[] plain)
+        {
+            return plain;
+        }
+
+        public async Task<byte[]> EncryptAsync(byte[] plain, CancellationToken cancellationToken = default)
+        {
+            return plain;
+        }
+
+        public byte[] Decrypt(byte[] encrypted)
+        {
+            return encrypted;
+        }
+
+        public async Task<byte[]> DecryptAsync(byte[] encrypted, CancellationToken cancellationToken = default)
+        {
+            return encrypted;
+        }
+
+        public void Dispose()
+        {
+        }
     }
 }
