@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <RootNamespace>Biz.Bizadm.KMS.NetFramework</RootNamespace>
+    <AssemblyName>Biz.Bizadm.KMS.NetFramework</AssemblyName>
+    <PackageId>Biz.Bizadm.KMS.NetFramework</PackageId>
+    <Version>1.0.0-net48</Version>
+    <Authors>SeongSikChae</Authors>
+    <Description>Independent .NET Framework 4.8 KMS implementation.</Description>
+    <IsPackable>true</IsPackable>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Deterministic>true</Deterministic>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <PackageReference Include="Azure.Security.KeyVault.Keys" Version="4.10.2" />
+    <PackageReference Include="Azure.Security.KeyVault.Secrets" Version="4.11.2" />
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.7.0" />
+    <PackageReference Include="Devlooped.CredentialManager" Version="2.7.0" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.TSS" Version="2.1.1" />
+    <PackageReference Include="Pkcs11Interop" Version="5.3.0" />
+  </ItemGroup>
+</Project>

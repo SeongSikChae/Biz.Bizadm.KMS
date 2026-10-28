@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <RootNamespace>Biz.Bizadm.KMS.NetFramework.Tests</RootNamespace>
+    <AssemblyName>Biz.Bizadm.KMS.NetFramework.Tests</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="MSTest" Version="3.6.4" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Biz.Bizadm.KMS.NetFramework\Biz.Bizadm.KMS.NetFramework.csproj" />
+    <Compile Remove="InteropNet10\**\*.cs;InteropNet48\**\*.cs;PackageConsumerNet48\**\*.cs" />
+  </ItemGroup>
+
+  <Target Name="BuildInteropHelpers" BeforeTargets="Build">
+    <MSBuild Projects="InteropNet10\InteropNet10.csproj;InteropNet48\InteropNet48.csproj" Targets="Restore;Build" Properties="Configuration=$(Configuration)" />
+  </Target>
+</Project>
