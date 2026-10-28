@@ -4,7 +4,7 @@
     <RootNamespace>Biz.Bizadm.KMS.NetFramework</RootNamespace>
     <AssemblyName>Biz.Bizadm.KMS.NetFramework</AssemblyName>
     <PackageId>Biz.Bizadm.KMS.NetFramework</PackageId>
-    <Version>1.0.0-net48</Version>
+    <Version>1.0.0</Version>
     <Authors>SeongSikChae</Authors>
     <Description>Independent .NET Framework 4.8 KMS implementation.</Description>
     <IsPackable>true</IsPackable>

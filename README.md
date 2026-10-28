@@ -29,11 +29,25 @@ ICipher
 │   ├── TpmKekManager
 │   ├── AzureKeyVaultKekManager
 │   └── Pkcs11KekManager
-└── IDekCipher                       # 데이터 암·복호화
-    └── AesGcmDekCipher              # AES-GCM (DEK는 envelope로 보관)
+├── IDekCipher                       # 데이터 암·복호화
+│   └── AesGcmDekCipher              # AES-GCM (DEK는 envelope로 보관)
+└── IDekCipherService                # UTF-8 문자열 파사드 (`DEKENC:` + Base64)
+    └── DekCipherService
 ```
 
 `AesGcmKekCipher`와 `AesGcmDekCipher`는 `AbstractAesGcmCipher`를 공유한다. 출력 형식은 `nonce(12) || cipher || tag(16)`.
+
+문자열 API는 `DekCipherService`가 `IDekCipher`를 감싼다. 암호문 형식은 `DEKENC:` + Base64(바이트 암호문)이다.
+기본은 DEK 소유권을 이전하고, 호출측이 DEK를 계속 쓸 때는 `leaveOpen: true`를 넘긴다.
+
+```csharp
+using AesGcmDekCipher dek = AesGcmDekCipher.Create(manager.Current, new FileInfo("dek.bin"));
+using IDekCipherService service = new DekCipherService(dek, leaveOpen: true);
+
+string cipher = service.Encrypt("secret");
+string plain = service.Decrypt(cipher);
+```
+
 
 ```csharp
 public interface ICipher : IDisposable

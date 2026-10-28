@@ -11,7 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Biz.Bizadm.KMS.NetFramework" Version="1.0.0-net48" />
+    <PackageReference Include="Biz.Bizadm.KMS.NetFramework" Version="1.0.0" />
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
   </ItemGroup>
 </Project>

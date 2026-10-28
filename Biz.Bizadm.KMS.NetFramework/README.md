@@ -10,7 +10,7 @@
 ## 설치
 
 ```xml
-<PackageReference Include="Biz.Bizadm.KMS.NetFramework" Version="1.0.0-net48" />
+<PackageReference Include="Biz.Bizadm.KMS.NetFramework" Version="1.0.0" />
 ```
 
 별도 `Biz.Bizadm.KMS.Pkcs11` / `Biz.Bizadm.KMS.Credentials` 패키지는 **없습니다**. PKCS#11과 Windows Credential 구현이 이 패키지에 포함됩니다.
@@ -36,8 +36,10 @@ ICipher
 │   ├── AzureKeyVaultKekCipher
 │   └── Pkcs11KekCipher
 ├── AesGcmKekManager / TpmKekManager / AzureKeyVaultKekManager / Pkcs11KekManager
-└── IDekCipher
-    └── AesGcmDekCipher
+├── IDekCipher
+│   └── AesGcmDekCipher
+└── IDekCipherService
+    └── DekCipherService             # UTF-8 문자열 (`DEKENC:` + Base64)
 ```
 
 ## 사용 예제
@@ -55,6 +57,11 @@ using AesGcmDekCipher dek = AesGcmDekCipher.CreateFromFile(manager.Current, "dek
 
 byte[] cipher = dek.Encrypt(plain);
 byte[] roundtrip = dek.Decrypt(cipher);
+
+// 문자열 API: leaveOpen:true면 서비스 Dispose 후에도 dek를 계속 쓸 수 있다.
+using IDekCipherService service = new DekCipherService(dek, leaveOpen: true);
+string textCipher = service.Encrypt("secret");
+string textPlain = service.Decrypt(textCipher);
 
 string oldKeyId = manager.Current.KeyId;
 manager.Rotate(newCreds, newSalt, iterations);
