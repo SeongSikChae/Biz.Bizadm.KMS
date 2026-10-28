@@ -2,7 +2,18 @@
 
 Key Management System 라이브러리. 공통 `ICipher` 아래에 KEK wrap/unwrap용 `IKekCipher`와 데이터 암·복호화용 `IDekCipher`를 두고, 소프트웨어·TPM·Azure Key Vault·PKCS#11 HSM 백엔드를 제공한다.
 
-대상 프레임워크: `net10.0`
+## 패키지·TFM 선택
+
+| TFM | 패키지 | 비고 |
+|---|---|---|
+| `net10.0` | `Biz.Bizadm.KMS` (+ 선택 `Biz.Bizadm.KMS.Pkcs11`, `Biz.Bizadm.KMS.Credentials`) | 본 문서의 상세 기준 |
+| `net48` | `Biz.Bizadm.KMS.NetFramework` (단일 패키지) | 독립 포트 — [NetFramework README](Biz.Bizadm.KMS.NetFramework/README.md) |
+
+`Biz.Bizadm.KMS.NetFramework`는 동일 개념·호환 envelope를 제공하는 **독립 구현**이며, `Biz.Bizadm.KMS`의 멀티타깃 TFM이 아니다. PKCS#11·Windows Credential이 한 패키지에 포함되고, Linux/macOS OS credentials는 지원하지 않는다.
+
+net10↔net48 교차 호환은 `Biz.Bizadm.KMS.NetFramework.Tests`에서 검증한다. CI(`TestCategory!=Manual`)는 AES-GCM wire·KDEK/KEK·DEK·Windows Credential을 다루고, Azure/TPM/PKCS#11 SoftHSM 교차는 Manual이다. 상세는 [NetFramework README](Biz.Bizadm.KMS.NetFramework/README.md)를 본다.
+
+이하는 **net10.0** (`Biz.Bizadm.KMS` 및 관련 패키지) 기준이다.
 
 ## 계층
 
